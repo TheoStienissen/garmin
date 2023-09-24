@@ -10,25 +10,41 @@ DOC
 Garmin data export: https://www.garmin.com/en-GB/account/datamanagement/exportdata/
 
 There are 3 parts to this solution:
-1. Downloaded CSV from the activities page. This data is loaded in the GARMIN table.
-   Column names are in Dutch, because the setting on the watch is Dutch.
+1. Downloaded CSV from the activities page: activities.csv This data is loaded in the GARMIN table.
+   Column names are in Dutch, because the setting on my watch are in Dutch.
 2. Downloaded CSV from the activity itself. This data is loaded in the GARMIN_DETAILS table.
 3. The .fit files which can be copied from the watch. Directory:  This PC\fenix 7\Internal Storage\GARMIN\Activity
 
 Dependencies:
 1. util package
+2. Pipelined function get_file_name
+
+
 
 #
 
 drop table garmin_details;
 drop table garmin cascade constraints;
+drop table garmin_users;
 drop sequence garmin_seq;
 
-create 
+-- The avatar or nick_name needs to be unique
+create table garmin_users
+( id            integer generated always as identity
+, first_name    varchar2 (20)
+, last_name     varchar2 (20)
+, windows_account   varchar2 (20)
+, nick_name     varchar2 (20) not null);
+
+insert into garmin_users (first_name, last_name, nick_name) values ('Theo', 'Stienissen', 'Theo');
+insert into garmin_users (first_name, last_name, nick_name) values ('Dolly', 'Stienissen', 'Dolly');
+insert into garmin_users (first_name, last_name, nick_name) values ('Celeste', 'Stienissen', 'Celeste');
+alter table garmin_users add constraint garmin_users_pk primary key (id);
+create unique index garmin_users_uk1 on garmin_users (nick_name);
 
 create table garmin (
 id                         integer,
-persoon                    varchar2 (20),
+person_id                  integer (4),
 Activiteittype             varchar2 (50),
 Datum                      date,
 Favoriet                   varchar2 (5),
@@ -80,8 +96,8 @@ Beste_tempo                interval day to second);
 
 
 alter table garmin add constraint garmin_pk primary key (id);
-create unique index garmin_uk1 on garmin (persoon, Activiteittype, Datum);
-alter table garmin add constraint garmin_ck1 check (persoon in ('Dolly', 'Theo', 'Celeste'));
+create unique index garmin_uk1 on garmin (person_id, Activiteittype, Datum);
+alter table garmin add constraint garmin_fk12 foreign key (person_id) references garmin_users (id);
 create sequence garmin_seq;
 
 create table garmin_details (
@@ -142,7 +158,7 @@ create or replace directory fit_theo as 'C:\Work\garmin\fit_theo';
 create table garmin_fit_data
 ( garmin_id            number (6)
 , id                   number (10)
-, person               varchar2 (10)
+, person_id            number (4)
 , avg_heart_rate       number (3)
 , avg_power            number (3)
 , max_power            number (3)
@@ -165,18 +181,22 @@ create table garmin_fit_data
 , total_calories       number (4)
 , total_elapsed_time   number (9, 3)
 , total_training_effect number (2, 1)
-, total_work           number (7));
+, total_work           number (7))
+ PARTITION BY list (garmin_id) automatic
+(PARTITION P_1 VALUES (1));
 
-alter table garmin_fit_data add constraint garmin_fit_data_pk primary key (garmin_id, id, person);
+alter table garmin_fit_data add constraint garmin_fit_data_pk primary key (garmin_id, id, person_id);
+alter table garmin_fit_data add constraint garmin_fit_data_fk1 foreign key (person_id) references garmin_users (id);
 
 create table garmin_map_fit_file_to_id
 ( garmin_id          number (10)
-, person             varchar2 (10)
+, person_id          number (4)
 , file_name          varchar2 (30)
 , loaded             number (1));
 
 alter table garmin_map_fit_file_to_id add constraint garmin_map_fit_file_to_id_pk primary key (file_name);
 create unique index garmin_map_fit_file_to_id_uk1 on garmin_map_fit_file_to_id (garmin_id);
+alter table garmin_map_fit_file_to_id add constraint garmin_map_fit_file_to_id_fk1 foreign key (person_id) references garmin_users (id);
 
 set serveroutput on size unlimited
 
@@ -184,10 +204,10 @@ create or replace package garmin_pkg
 is
 g_max_int   constant integer := power (2, 31);
 g_username  constant varchar2 (10) := 'THEO';        -- Database schema user
-g_password  constant varchar2 (10) := '<pwd>';   -- Database password
+g_password  constant varchar2 (10) := '<pwd>';       -- Database password
 g_connect_string constant varchar2 (10) := 'db19c';  -- Database tns entry
 
-g_user      varchar2 (20);
+g_user_id   number (10);
 g_garmin_id number (10);
 
 function ds_to_varchar2 (p_ds in interval day to second) return varchar2;
@@ -198,13 +218,13 @@ function to_ds (p_string in varchar2, p_col in varchar2 default null) return int
 
 function to_dt (p_string in varchar2, p_col in varchar2 default null) return date;
 
-procedure load_garmin_data (p_user in varchar2, p_garmin_id in integer default null);
+procedure load_garmin_data (p_nick_name in varchar2, p_garmin_id in integer default null);
 
 procedure move_csv_files_to_backup;
 
-procedure move_from_downloads_to_garmin (p_user in varchar2 default 'Theo');
+procedure move_from_downloads_to_garmin (p_nick_name in varchar2 default null);
 
-procedure load_csv_file (p_user in varchar2, p_garmin_id in integer default null, p_remove in integer default 1);
+procedure load_csv_file (p_nick_name in varchar2, p_garmin_id in integer default null, p_remove in integer default 1);
 
 function interval_ds_to_seconds (p_interval in interval day to second) return integer;
 
@@ -220,11 +240,11 @@ procedure create_sqlldr_control_file (p_file_name in varchar2);
 
 procedure load_converted_fit_file_with_sqlldr;
 
-procedure extract_detailed_data (p_garmin_id in integer, p_person in varchar2);
+procedure extract_detailed_data (p_garmin_id in integer, p_person_id in number);
 
 procedure map_fit_files_to_garmin_id;
 
-procedure start_load_fit_data (p_person in varchar2 default null);
+procedure start_load_fit_data (p_nick_name in varchar2 default null);
 
 procedure end_load_fit_data (p_remove_csv in boolean default true);
 
@@ -259,7 +279,7 @@ l_nr    number (20,4);
 begin
   if p_string is null or p_string = '--' then return null;
   elsif p_string like '%:%' -- tempo 
-  then l_nr := round(3600 / (60 * substr (p_string, 1, instr (p_string, ':') - 1) + substr (p_string, instr (p_string, ':') + 1)), 2);  
+  then l_nr := round (3600 / (60 * substr (p_string, 1, instr (p_string, ':') - 1) + substr (p_string, instr (p_string, ':') + 1)), 2);  
   else l_nr := to_number (replace (p_string, ',', '.'));  
   end if;
   return l_nr;
@@ -326,7 +346,7 @@ end to_dt;
 --
 -- Load the data from the activities.csv file
 --
-procedure load_garmin_data (p_user in varchar2, p_garmin_id in integer default null)
+procedure load_garmin_data (p_nick_name in varchar2, p_garmin_id in integer default null)
 is 
   type string_ty   is table of varchar2 (4000) index by binary_integer;
   l_column_header              string_ty;
@@ -368,8 +388,8 @@ is
 --
 begin
   utl_file.fclose_all;
-  for f in (select substr(file_name, instr (file_name, chr(92), 1, 3) +1) fn from table (get_file_name ('C:\Work\garmin' || chr(92), 'csv'))
-                    where upper(file_name) like '%ACTIVIT%' order by file_name)
+  for f in (select u.id, substr(fn.file_name, instr (fn.file_name, chr(92), 1, 3) +1) fn from table (get_file_name ('C:\Work\garmin' || chr(92), 'csv')) fn, garmin_users u
+                    where upper(fn.file_name) like '%ACTIVIT%' and u.nick_name = p_nick_name order by file_name)
   loop 
   begin 
     l_fhandle := utl_file.fopen ('GARMIN' , f.fn, 'r' );
@@ -394,7 +414,7 @@ begin
 		l_activiteit := next_item;
 		l_datum      := to_dt (next_item);
         select garmin_seq.nextval into l_id from dual;
-		insert into garmin (id, persoon, Activiteittype, Datum) values (l_id, p_user, l_activiteit, l_datum);
+		insert into garmin (id, person_id, Activiteittype, Datum) values (l_id, f.id, l_activiteit, l_datum);
 		for i in 3 .. l_count
 		loop 
 		  l_next := next_item;
@@ -478,7 +498,7 @@ begin
 		  end;
 		end loop;
 		
-		l_next    := next_item; -- [Overzicht] Laatste regel
+		l_next    := next_item; -- [Overzicht] Last line
 		while l_next not like '%:%' or l_next is null -- Find the first time ds field
 		loop 
 		  l_next    := next_item;
@@ -525,7 +545,7 @@ begin
 			when 'Max. W/kg'                  then update garmin_details set max_watt_per_kg = to_nr (l_next, 'Max. W/kg')                  where garmin_id = l_id and ronde = l_ronde;	  
 			when 'Gem. loopcadans'            then update garmin_details set gem_loopcadans = to_nr (l_next, 'Gem. loopcadans')             where garmin_id = l_id and ronde = l_ronde;	  
 			when 'Gem. grondcontacttijd'      then update garmin_details set gem_grondcontacttijd = to_nr (l_next, 'Gem. grondcontacttijd') where garmin_id = l_id and ronde = l_ronde;	  
-			when 'Gem. GCT balans'            then update garmin_details set gem_gct_balans = l_next          where garmin_id = l_id and ronde = l_ronde;	  
+			when 'Gem. GCT balans'            then update garmin_details set gem_gct_balans = l_next                                        where garmin_id = l_id and ronde = l_ronde;	  
 			when 'Gem. staplengte'            then update garmin_details set Gem_staplengte = to_nr (l_next, 'Gem. staplengte')             where garmin_id = l_id and ronde = l_ronde;	  
 			when 'Gem. verticale oscillatie'  then update garmin_details set Gem_verticale_oscillatie = to_nr (l_next, 'Gem. verticale oscillatie') where garmin_id = l_id and ronde = l_ronde;	  
 			when 'Gemiddelde verticale ratio' then update garmin_details set Gemiddelde_verticale_ratio = to_nr (l_next, 'Gemiddelde verticale ratio') where garmin_id = l_id and ronde = l_ronde;	  
@@ -567,12 +587,12 @@ end load_garmin_data;
 /******************************************************************************************************************************************************************/
 
 --
--- Move files to a different directory and add ad time extention
+-- Move files from garmin directory to a backup directory and add time extention
 --
 procedure move_csv_files_to_backup
 is
 begin 
-  for f in (select file_name, substr(file_name, instr (file_name, chr(92), 1, 3) +1) fn  from table (get_file_name ('C:\Work\garmin\ ', 'csv')) order by file_name)
+  for f in (select file_name, substr(file_name, instr (file_name, chr(92), 1, 3) +1) fn  from table (get_file_name ('C:\Work\garmin\ ', 'csv')))
   loop 
     begin 
       utl_file.frename ('GARMIN', f.fn, 'GARMIN_BACKUP', f.fn || '_' || to_char (sysdate, 'YYYYMonDD'), true);
@@ -589,37 +609,24 @@ end move_csv_files_to_backup;
 /******************************************************************************************************************************************************************/
 
 --
--- Move files from Downloads to GARMIN directory. The user can have 3 values: Dolly, Theo or Celeste.
--- Only users Dolly and Theo have a downloads directory in this PC
+-- Move files from Downloads to GARMIN directory.
 --
-procedure move_from_downloads_to_garmin (p_user in varchar2 default 'Theo')
+procedure move_from_downloads_to_garmin (p_nick_name in varchar2 default null)
 is
 begin
-  if p_user = 'Theo'
-  then 
-    for f in (select substr(file_name, instr (file_name, chr(92), 1, 4) +1) fn from table (get_file_name ('C:\Users\Theo\Downloads', 'csv')) where upper (file_name) like '%ACTIVIT%')
+  for j in (select first_name from garmin_users where nick_name = nvl (p_nick_name, nick_name))
+  loop
+    for f in (select substr(file_name, instr (file_name, chr(92), 1, 4) +1) fn from table (get_file_name ('C:\Users' || chr (92) || j.first_name || '\Downloads', 'csv')) where upper (file_name) like '%ACTIVIT%')
     loop
       begin
-        utl_file.frename ('DOWNLOADS_THEO', f.fn, 'GARMIN', f.fn);
+        utl_file.frename ('DOWNLOADS_' || upper (j.first_name), f.fn, 'GARMIN', f.fn);
       exception when others then null;
       end;
     end loop;
-  elsif p_user = 'Dolly'
-  then 
-    for f in (select substr(file_name, instr (file_name, chr(92), 1, 4) +1) fn from table (get_file_name ('C:\Users\Dolly\Downloads', 'csv')) where upper (file_name) like '%ACTIVIT%')
-    loop
-      begin
-        utl_file.frename ('DOWNLOADS_DOLLY', f.fn, 'GARMIN', f.fn);
-      exception when others then null;
-      end;
-    end loop;
-  else
-    move_from_downloads_to_garmin ('Dolly');
-    move_from_downloads_to_garmin ('Theo');
-  end if;
+  end loop;
 
 exception when others then 
-   util.show_error ('Error in procedure move_from_downloads_to_garmin', sqlerrm);
+   util.show_error ('Error in procedure move_from_downloads_to_garmin for nick name: ' || p_nick_name, sqlerrm);
 end move_from_downloads_to_garmin;
 
 /******************************************************************************************************************************************************************/
@@ -627,11 +634,13 @@ end move_from_downloads_to_garmin;
 --
 -- Routine to call several other subroutines
 --
-procedure load_csv_file (p_user in varchar2, p_garmin_id in integer default null, p_remove in integer default 1)
+procedure load_csv_file (p_nick_name in varchar2, p_garmin_id in integer default null, p_remove in integer default 1)
 is
+l_first_name garmin_users.first_name%type;
 begin
-  move_from_downloads_to_garmin (p_user);
-  garmin_pkg.load_garmin_data (p_user, p_garmin_id);
+  select first_name into l_first_name from garmin_users where p_nick_name = p_nick_name;
+  move_from_downloads_to_garmin (l_first_name);
+  garmin_pkg.load_garmin_data (l_first_name, p_garmin_id);
   if p_remove = 1
   then 
     garmin_pkg.move_csv_files_to_backup;
@@ -703,8 +712,10 @@ end semicircles_to_lon_lat;
 
 /******************************************************************************************************************************************************************/
 
---
--- The Oracle scheduler job is able to run external routines
+-- 
+-- The Oracle scheduler job is able to run external routines. Requirement is that the external jib scheduler service is running
+-- https://developer.garmin.com/fit/download/
+-- https://developer.garmin.com/fit/protocol/
 --
 procedure convert_fit_file_to_csv (p_file_name in varchar2)
 is
@@ -718,8 +729,8 @@ begin
    dbms_scheduler.set_job_argument_value (l_job_name, 1, p_file_name);
    dbms_output.put_line ('Job name:  ' || l_job_name);
    dbms_scheduler.run_job (l_job_name);
-   commit;
    dbms_scheduler.drop_job (l_job_name);
+   commit;
 
 exception when others then
    dbms_scheduler.drop_job(l_job_name);
@@ -799,27 +810,27 @@ end load_converted_fit_file_with_sqlldr;
 --
 -- Fill table garmin_fit_data
 --
-procedure extract_detailed_data (p_garmin_id in integer, p_person in varchar2)
-is 
-begin 
+procedure extract_detailed_data (p_garmin_id in integer, p_person_id in number)
+is
+begin
   for j in (select id, attribute, value, dimension from v_fit_data)
   loop
 	case j.attribute
 	when 'avg_heart_rate'
 	then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, avg_heart_rate) values (p_garmin_id, j.id, p_person, to_number (j.value));
+	  insert into garmin_fit_data (garmin_id, id, person_id, avg_heart_rate) values (p_garmin_id, j.id, p_person_id, to_number (j.value));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set avg_heart_rate = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set avg_heart_rate = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 --
 	when 'avg_power'
 	then
 	  if  to_number (j.value) > 30 then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, avg_power) values (p_garmin_id, j.id, p_person, to_number (j.value));
+	  insert into garmin_fit_data (garmin_id, id, person_id, avg_power) values (p_garmin_id, j.id, p_person_id, to_number (j.value));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set avg_power = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set avg_power = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 	  end if;
 --
@@ -827,9 +838,9 @@ begin
 	then
 	  if  to_number (j.value) > 30 then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, max_power) values (p_garmin_id, j.id, p_person, to_number (j.value));
+	  insert into garmin_fit_data (garmin_id, id, person_id, max_power) values (p_garmin_id, j.id, p_person_id, to_number (j.value));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set max_power = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set max_power = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 	  end if;
 --
@@ -837,9 +848,9 @@ begin
 	then
 	  if  to_number (j.value) > 30 then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, power) values (p_garmin_id, j.id, p_person, to_number (j.value));
+	  insert into garmin_fit_data (garmin_id, id, person_id, power) values (p_garmin_id, j.id, p_person_id, to_number (j.value));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set power = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set power = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 	  end if;
 --
@@ -847,9 +858,9 @@ begin
 	then
 	  if  to_number (j.value) > 100000 then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, start_position_lat) values (p_garmin_id, j.id, p_person, garmin_pkg.semicircles_to_lon_lat (to_number (j.value)));
+	  insert into garmin_fit_data (garmin_id, id, person_id, start_position_lat) values (p_garmin_id, j.id, p_person_id, garmin_pkg.semicircles_to_lon_lat (to_number (j.value)));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set start_position_lat = garmin_pkg.semicircles_to_lon_lat (to_number (j.value)) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set start_position_lat = garmin_pkg.semicircles_to_lon_lat (to_number (j.value)) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 	  end if;
 --
@@ -857,67 +868,67 @@ begin
 	then
 	  if  to_number (j.value) > 100000 then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, start_position_long) values (p_garmin_id, j.id, p_person, garmin_pkg.semicircles_to_lon_lat (to_number (j.value)));
+	  insert into garmin_fit_data (garmin_id, id, person_id, start_position_long) values (p_garmin_id, j.id, p_person_id, garmin_pkg.semicircles_to_lon_lat (to_number (j.value)));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set start_position_long = garmin_pkg.semicircles_to_lon_lat (to_number (j.value)) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set start_position_long = garmin_pkg.semicircles_to_lon_lat (to_number (j.value)) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 	  end if;
 --
 	when 'step_length'
 	then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, step_length) values (p_garmin_id, j.id, p_person, to_number (j.value));
+	  insert into garmin_fit_data (garmin_id, id, person_id, step_length) values (p_garmin_id, j.id, p_person_id, to_number (j.value));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set step_length = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set step_length = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 --
 	when 'avg_step_length'
 	then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, avg_step_length) values (p_garmin_id, j.id, p_person, to_number (j.value));
+	  insert into garmin_fit_data (garmin_id, id, person_id, avg_step_length) values (p_garmin_id, j.id, p_person_id, to_number (j.value));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set avg_step_length = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set avg_step_length = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 --
 	when 'distance'
 	then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, distance) values (p_garmin_id, j.id, p_person, to_number (j.value));
+	  insert into garmin_fit_data (garmin_id, id, person_id, distance) values (p_garmin_id, j.id, p_person_id, to_number (j.value));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set distance = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set distance = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 --
 	when 'total_distance'
 	then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, total_distance) values (p_garmin_id, j.id, p_person, to_number (j.value));
+	  insert into garmin_fit_data (garmin_id, id, person_id, total_distance) values (p_garmin_id, j.id, p_person_id, to_number (j.value));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set total_distance = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set total_distance = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 --
 	when 'enhanced_avg_speed'
 	then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, enhanced_avg_speed) values (p_garmin_id, j.id, p_person, to_number (j.value));
+	  insert into garmin_fit_data (garmin_id, id, person_id, enhanced_avg_speed) values (p_garmin_id, j.id, p_person_id, to_number (j.value));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set enhanced_avg_speed = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set enhanced_avg_speed = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 --
 	when 'enhanced_speed'
 	then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, enhanced_speed) values (p_garmin_id, j.id, p_person, to_number (j.value));
+	  insert into garmin_fit_data (garmin_id, id, person_id, enhanced_speed) values (p_garmin_id, j.id, p_person_id, to_number (j.value));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set enhanced_speed = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set enhanced_speed = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 --
 	when 'heart_rate'
 	then
 	  if  to_number (j.value) > 30 then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, heart_rate) values (p_garmin_id, j.id, p_person, to_number (j.value));
+	  insert into garmin_fit_data (garmin_id, id, person_id, heart_rate) values (p_garmin_id, j.id, p_person_id, to_number (j.value));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set heart_rate = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set heart_rate = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 	  end if;
 --
@@ -925,27 +936,27 @@ begin
 	then
 	  if  to_number (j.value) > 30 then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, max_heart_rate) values (p_garmin_id, j.id, p_person, to_number (j.value));
+	  insert into garmin_fit_data (garmin_id, id, person_id, max_heart_rate) values (p_garmin_id, j.id, p_person_id, to_number (j.value));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set max_heart_rate = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set max_heart_rate = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 	  end if;
 --
 	when 'num_laps'
 	then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, num_laps) values (p_garmin_id, j.id, p_person, to_number (j.value));
+	  insert into garmin_fit_data (garmin_id, id, person_id, num_laps) values (p_garmin_id, j.id, p_person_id, to_number (j.value));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set num_laps = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set num_laps = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 --
 	when 'position_lat'
 	then
 	  if  to_number (j.value) > 100000 then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, position_lat) values (p_garmin_id, j.id, p_person, garmin_pkg.semicircles_to_lon_lat (to_number (j.value)));
+	  insert into garmin_fit_data (garmin_id, id, person_id, position_lat) values (p_garmin_id, j.id, p_person_id, garmin_pkg.semicircles_to_lon_lat (to_number (j.value)));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set position_lat = garmin_pkg.semicircles_to_lon_lat (to_number (j.value)) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set position_lat = garmin_pkg.semicircles_to_lon_lat (to_number (j.value)) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 	  end if;
 --
@@ -953,9 +964,9 @@ begin
 	then
 	  if  to_number (j.value) > 100000 then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, position_long) values (p_garmin_id, j.id, p_person, garmin_pkg.semicircles_to_lon_lat (to_number (j.value)));
+	  insert into garmin_fit_data (garmin_id, id, person_id, position_long) values (p_garmin_id, j.id, p_person_id, garmin_pkg.semicircles_to_lon_lat (to_number (j.value)));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set position_long = garmin_pkg.semicircles_to_lon_lat (to_number (j.value)) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set position_long = garmin_pkg.semicircles_to_lon_lat (to_number (j.value)) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 	  end if;
 --
@@ -963,9 +974,9 @@ begin
 	then
 	  if  to_number (j.value) > 100000 then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, start_time) values (p_garmin_id, j.id, p_person, garmin_pkg.date_offset_to_date (to_number (j.value)));
+	  insert into garmin_fit_data (garmin_id, id, person_id, start_time) values (p_garmin_id, j.id, p_person_id, garmin_pkg.date_offset_to_date (to_number (j.value)));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set start_time = garmin_pkg.date_offset_to_date (to_number (j.value)) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set start_time = garmin_pkg.date_offset_to_date (to_number (j.value)) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 	  end if;
 --
@@ -973,42 +984,42 @@ begin
 	then
 	  if  to_number (j.value) > 100000 then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, timestamp) values (p_garmin_id, j.id, p_person, garmin_pkg.date_offset_to_date (to_number (j.value)));
+	  insert into garmin_fit_data (garmin_id, id, person_id, timestamp) values (p_garmin_id, j.id, p_person_id, garmin_pkg.date_offset_to_date (to_number (j.value)));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set timestamp = garmin_pkg.date_offset_to_date (to_number (j.value)) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set timestamp = garmin_pkg.date_offset_to_date (to_number (j.value)) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 	  end if;
 --
 	when 'total_calories'
 	then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, total_calories) values (p_garmin_id, j.id, p_person, to_number (j.value));
+	  insert into garmin_fit_data (garmin_id, id, person_id, total_calories) values (p_garmin_id, j.id, p_person_id, to_number (j.value));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set total_calories = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set total_calories = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 --
 	when 'total_elapsed_time'
 	then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, total_elapsed_time) values (p_garmin_id, j.id, p_person, to_number (j.value));
+	  insert into garmin_fit_data (garmin_id, id, person_id, total_elapsed_time) values (p_garmin_id, j.id, p_person_id, to_number (j.value));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set total_elapsed_time = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set total_elapsed_time = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 --
 	when 'total_training_effect'
 	then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, total_training_effect) values (p_garmin_id, j.id, p_person, to_number (j.value));
+	  insert into garmin_fit_data (garmin_id, id, person_id, total_training_effect) values (p_garmin_id, j.id, p_person_id, to_number (j.value));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set total_training_effect = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set total_training_effect = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
 --
 	when 'total_work'
 	then
 	  begin
-	  insert into garmin_fit_data (garmin_id, id, person, total_work) values (p_garmin_id, j.id, p_person, to_number (j.value));
+	  insert into garmin_fit_data (garmin_id, id, person_id, total_work) values (p_garmin_id, j.id, p_person_id, to_number (j.value));
 	  exception when dup_val_on_index
-	  then update garmin_fit_data set total_work = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person = p_person;
+	  then update garmin_fit_data set total_work = to_number (j.value) where garmin_id = p_garmin_id and id = j.id and person_id = p_person_id;
 	  end;
     else null;
     end case;
@@ -1017,7 +1028,7 @@ begin
   commit;
 
 exception when others then 
-   util.show_error ('Error in procedure extract_detailed_data for: ' || p_person || '. ID:  ' || p_garmin_id, sqlerrm);
+   util.show_error ('Error in procedure extract_detailed_data for user with ID: ' || p_person_id || ' and Garmin ID:  ' || p_garmin_id, sqlerrm);
 end extract_detailed_data;
 
 /******************************************************************************************************************************************************************/
@@ -1029,35 +1040,24 @@ procedure map_fit_files_to_garmin_id
 is 
 l_found boolean;
 begin 
-delete garmin_map_fit_file_to_id where garmin_id is null;
-for j in (select substr(file_name, instr (file_name, chr(92), 1, 4) +1) fn from table (get_file_name ('C:\Work\garmin\fit_Dolly' || chr(92), 'fit')))
-loop 
-  l_found := false;
-  for t in (select id from garmin where to_char (datum, 'YYYY-MM-DD-HH24-MI') = substr (j.fn, 1, 16) and persoon = 'Dolly' )
+  delete garmin_map_fit_file_to_id where garmin_id is null;
+  for n in (select id, first_name from garmin_users)
   loop
-    l_found := true;
-	begin
-      insert into garmin_map_fit_file_to_id (garmin_id, person, file_name, loaded) values (t.id, 'Dolly', j.fn, 0);
-	exception when dup_val_on_index then null;
-	end;
+    for j in (select substr(file_name, instr (file_name, chr(92), 1, 4) +1) fn from table (get_file_name ('C:\Work\garmin\fit_' || n.first_name || chr(92), 'fit')))
+    loop 
+      l_found := false;
+      for t in (select id from garmin where to_char (datum, 'YYYY-MM-DD-HH24-MI') = substr (j.fn, 1, 16) and person_id = n.id )
+      loop
+        l_found := true;
+	    begin
+          insert into garmin_map_fit_file_to_id (garmin_id, person_id, file_name, loaded) values (t.id, n.id, j.fn, 0);
+	    exception when dup_val_on_index then null;
+	    end;
+      end loop;
+      if not l_found then insert into garmin_map_fit_file_to_id (person_id, file_name, loaded) values (n.id, j.fn, 0); end if;
+    end loop;
   end loop;
-  if not l_found then insert into garmin_map_fit_file_to_id (person, file_name, loaded) values ('Dolly', j.fn, 0); end if;
-end loop;
---
-for j in (select substr(file_name, instr (file_name, chr(92), 1, 4) +1) fn from table (get_file_name ('C:\Work\garmin\fit_Theo' || chr(92), 'fit')))
-loop
-  l_found := false;
-  for t in (select id, activiteittype, afstand, to_char (datum , 'HH24:MI:SS') datum from garmin where to_char (datum, 'YYYY-MM-DD-HH24-MI') = substr (j.fn, 1, 16) and persoon = 'Theo' )
-  loop
-    l_found := true;
-    begin
-      insert into garmin_map_fit_file_to_id (garmin_id, person, file_name, loaded) values (t.id, 'Theo', j.fn, 0);
-	exception when dup_val_on_index then null;
-	end;
-  end loop;
-    if not l_found then insert into garmin_map_fit_file_to_id (person, file_name, loaded) values ('Theo', j.fn, 0); end if;
-end loop;
-commit;
+  commit;
 
 exception when others then 
    util.show_error ('Error in procedure map_fit_files_to_garmin_id', sqlerrm);
@@ -1066,26 +1066,33 @@ end map_fit_files_to_garmin_id;
 /******************************************************************************************************************************************************************/
 
 --
--- Convert the fit files to CSV and generate the sqlldr file. Running sqlldr remains a manual task
+-- Convert the fit files to CSV and generate the sqlldr file. Running sqlldr remains a manual task. Prioritize users by giving their nick name as parameter
 --
-procedure start_load_fit_data (p_person in varchar2 default null)
+procedure start_load_fit_data (p_nick_name in varchar2 default null)
 is
 l_fit_file    varchar2 (30);
 l_file_name   varchar2 (100);
+l_user_id     garmin_users.id%type;
+l_user_name   garmin_users.nick_name%type;
 begin
   map_fit_files_to_garmin_id;
-  select garmin_id, person, file_name into g_garmin_id, g_user, l_fit_file from garmin_map_fit_file_to_id
-  where garmin_id = (select max (garmin_id) from garmin_map_fit_file_to_id where person = nvl (p_person, person) and loaded = 0);
-  l_file_name := 'C:\Work\garmin\fit_' || g_user || chr (92) || l_fit_file;
+  if p_nick_name is not null then select id, first_name into l_user_id, l_user_name from garmin_users where nick_name = p_nick_name; end if;
+
+  select garmin_id, person_id, file_name into g_garmin_id, g_user_id, l_fit_file from garmin_map_fit_file_to_id
+  where garmin_id = (select max (garmin_id) from garmin_map_fit_file_to_id where person_id = nvl (l_user_id, person_id) and loaded = 0);
+  
+  if l_user_name is null then select nick_name into l_user_name from garmin_users where id = g_user_id; end if;
+  
+  l_file_name := 'C:\Work\garmin\fit_' || l_user_name || chr (92) || l_fit_file;
   dbms_output.put_line ('Converting file: ' || l_file_name);
   garmin_pkg.convert_fit_file_to_csv (l_file_name);
-  l_file_name := 'C:\Work\garmin\fit_' || g_user || chr (92) || substr (l_fit_file, 1, 19) || '.csv';
+  l_file_name := 'C:\Work\garmin\fit_' || l_user_name || chr (92) || substr (l_fit_file, 1, 19) || '.csv';
   dbms_output.put_line ('Creating controlfile for: ' || l_file_name);
   garmin_pkg.create_sqlldr_control_file  (l_file_name);
   dbms_output.put_line ('host sqlldr theo/<pwd> control=C:\Work\garmin\load.par');
 
 exception when others then 
-   util.show_error ('Error in procedure start_load_fit_data for person: ' || p_person, sqlerrm);
+   util.show_error ('Error in procedure start_load_fit_data for person: ' || p_nick_name, sqlerrm);
 end start_load_fit_data;
 
 /******************************************************************************************************************************************************************/
@@ -1096,22 +1103,20 @@ end start_load_fit_data;
 procedure end_load_fit_data (p_remove_csv in boolean default true)
 is
 begin
-  garmin_pkg.extract_detailed_data (g_garmin_id, g_user);
+  garmin_pkg.extract_detailed_data (g_garmin_id, g_user_id);
   if p_remove_csv
-  then  
-    for j in (select substr(file_name, instr (file_name, chr(92), 1, 4) + 1) fn from table (get_file_name ('C:\Work\garmin\fit_Dolly' || chr(92), 'csv')))
-     loop 
-       utl_file.fremove ('FIT_DOLLY', j.fn);
-     end loop;
---
-    for j in (select substr(file_name, instr (file_name, chr(92), 1, 4) + 1) fn from table (get_file_name ('C:\Work\garmin\fit_Theo' || chr(92), 'csv')))
-    loop
-      utl_file.fremove ('FIT_THEO', j.fn);
-    end loop;  
+  then 
+    for u in (select first_name from garmin_users)
+    loop  
+      for j in (select substr(file_name, instr (file_name, chr(92), 1, 4) + 1) fn from table (get_file_name ('C:\Work\garmin\fit_' || u.first_name || chr(92), 'csv')))
+      loop 
+         utl_file.fremove ('FIT_' || upper (u.first_name), j.fn);
+	  end loop;
+    end loop;
   end if;
 
 exception when others then 
-   util.show_error ('Error in procedure end_load_fit_data for ID: ' || g_garmin_id || ' and user: ' || g_user, sqlerrm);
+   util.show_error ('Error in procedure end_load_fit_data for ID: ' || g_garmin_id || ' and user ID: ' || g_user_id, sqlerrm);
 end end_load_fit_data;
 
 end garmin_pkg;
@@ -1120,11 +1125,11 @@ end garmin_pkg;
 
 /* Demo
 
-exec garmin_pkg.start_load_fit_data ('Dolly')
+exec garmin_pkg.start_load_fit_data ('Theo')
 !! Run sqlldr
 exec garmin_pkg.end_load_fit_data
 
-exec garmin_pkg.load_garmin_data ('Dolly')
+exec garmin_pkg.load_garmin_data ('Theo')
 exec garmin_pkg.move_csv_files_to_backup
 exec garmin_pkg.load_csv_file ('Dolly')
 exec garmin_pkg.move_from_downloads_to_garmin ('Dolly')
