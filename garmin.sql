@@ -34,7 +34,10 @@ create table garmin_users
 , first_name    varchar2 (20)
 , last_name     varchar2 (20)
 , windows_account   varchar2 (20)
-, nick_name     varchar2 (20) not null);
+, nick_name     varchar2 (20) not null
+, hr_low        number (3)    not null default 100
+, hr_medium     number (3)    not null default 120
+, hr_high       number (3)    not null default 140);
 
 insert into garmin_users (first_name, last_name, nick_name) values ('Theo', 'Stienissen', 'Theo');
 insert into garmin_users (first_name, last_name, nick_name) values ('Dolly', 'Stienissen', 'Dolly');
@@ -204,7 +207,7 @@ create or replace package garmin_pkg
 is
 g_max_int   constant integer := power (2, 31);
 g_username  constant varchar2 (10) := 'THEO';        -- Database schema user
-g_password  constant varchar2 (10) := '<pwd>';       -- Database password
+g_password  constant varchar2 (10) := 'Celeste14';   -- Database password
 g_connect_string constant varchar2 (10) := 'db19c';  -- Database tns entry
 
 g_user_id   number (10);
@@ -247,6 +250,8 @@ procedure map_fit_files_to_garmin_id;
 procedure start_load_fit_data (p_nick_name in varchar2 default null);
 
 procedure end_load_fit_data (p_remove_csv in boolean default true);
+
+function get_heartrate (p_person_id in integer, p_range in integer) return integer;
 
 end garmin_pkg;
 /
@@ -758,8 +763,8 @@ begin
   utl_file.put_line (l_filehandle, 'options (skip 1)'); 
   utl_file.put_line (l_filehandle, 'load data');
   utl_file.put_line (l_filehandle, 'infile ''' || p_file_name || '''');
-  utl_file.put_line (l_filehandle, 'badfile ''fit.bad''');
-  utl_file.put_line (l_filehandle, 'discardfile ''fit.dsc''');
+  utl_file.put_line (l_filehandle, 'badfile ''C:\Work\garmin\fit.bad''');
+  utl_file.put_line (l_filehandle, 'discardfile ''C:\Work\garmin\fit.dsc''');
   utl_file.put_line (l_filehandle, 'truncate');  -- intermediate table, so truncate old contents
   utl_file.put_line (l_filehandle, 'into table garmin_load_tags');  
   utl_file.put_line (l_filehandle, 'fields terminated by "," optionally enclosed by ''"''  trailing nullcols');
@@ -780,21 +785,22 @@ end create_sqlldr_control_file;
 
 /******************************************************************************************************************************************************************/
 
---
+-- job_action  => 'C:\app\oracle\product\19.3\bin\sqlldr',
 -- This routine is still open, because it refuses to run sqlldr
---
+-- /c 
 procedure load_converted_fit_file_with_sqlldr
 is
 l_job_name    varchar2 (100) := dbms_scheduler.generate_job_name;
 begin 
    dbms_scheduler.create_job (job_name    => l_job_name,
                               job_type    => 'executable',
-                              job_action  => 'C:\app\oracle\product\19.3\bin\sqlldr',
+							  job_action  => 'C:\app\oracle\product\19.3\bin\sqlldr',                 
                               number_of_arguments => 2,
-                              auto_drop   => true);
+                              auto_drop   => true);						  
    dbms_scheduler.set_job_argument_value (l_job_name, 1, g_username || '/' || g_password || '@' || g_connect_string);
-   dbms_scheduler.set_job_argument_value (l_job_name, 2, ' control=C:\Work\garmin\load.par');
+   dbms_scheduler.set_job_argument_value (l_job_name, 2, 'control=C:\Work\garmin\load.par');
    dbms_output.put_line ('Job name:  ' || l_job_name);
+--   dbms_scheduler.set_attribute (l_job_name, 'credential_name', 'Theo');
    dbms_scheduler.run_job (l_job_name);
    commit;
    dbms_scheduler.drop_job (l_job_name);
@@ -1119,13 +1125,29 @@ exception when others then
    util.show_error ('Error in procedure end_load_fit_data for ID: ' || g_garmin_id || ' and user ID: ' || g_user_id, sqlerrm);
 end end_load_fit_data;
 
+/******************************************************************************************************************************************************************/
+
+--
+-- Returning corresponding range haertrate
+--
+function get_heartrate (p_person_id in integer, p_range in integer) return integer
+is
+l_heartrate number (3);
+begin
+  select case p_range when 1 then hr_low when 2 then hr_medium when 3 then hr_high else null end into l_heartrate from garmin_users where id = p_range;
+  return l_heartrate;
+
+exception when others then 
+   util.show_error ('Error in function get_heartrate for userid: ' || p_person_id || ' and range: ' || p_range, sqlerrm);
+end get_heartrate;
+
 end garmin_pkg;
 /
 
 
 /* Demo
 
-exec garmin_pkg.start_load_fit_data ('Theo')
+exec garmin_pkg.start_load_fit_data ('Dolly')
 !! Run sqlldr
 exec garmin_pkg.end_load_fit_data
 
@@ -1134,7 +1156,7 @@ exec garmin_pkg.move_csv_files_to_backup
 exec garmin_pkg.load_csv_file ('Dolly')
 exec garmin_pkg.move_from_downloads_to_garmin ('Dolly')
 exec garmin_pkg. extract_detailed_data (1,'Theo')
-exec garmin_pkg.create_sqlldr_control_file ('C:\Work\garmin\fit_theo\2023-05-12-12-32-51.csv')
+exec garmin_pkg.create_sqlldr_control_file ('C:\Work\garmin\fit_Dolly\2023-09-22-13-46-47_fittocsv.csv')
 exec garmin_pkg.load_converted_fit_file_with_sqlldr
 
 
@@ -1672,8 +1694,35 @@ timestamp
 
 
 
-declare 
+ToDO:
+select * from garmin_fit_data where 
+ (total_elapsed_time is not null  or  total_training_effect is not null)
+and garmin_id = 1262 and avg_heart_rate is not null
+order by garmin_id;
 
+
+
+-- Stepwise measurements
+select round(gf.distance, -2)/ .5 distance, max(gf.enhanced_speed) enhanced_speed, round(avg(heart_rate)) heart_rate,
+avg(gf.position_lat) position_lat, avg(gf.position_long) position_long
+from 
+(select 0.5 * gfi.distance distance, gfi.enhanced_speed, gfi.heart_rate, gfi.position_lat, gfi.position_long from
+garmin_fit_data gfi where gfi.garmin_id = 1 and gfi.position_lat is not null and gfi.timestamp is not null
+and gfi.person_id = gfi.person_id) gf
+group by round(gf.distance, -2)
+ having round(avg(heart_rate)) < 130
+order by 1;
+
+
+ dbms_scheduler.set_attribute('MODPY_JOB','credential_name','Theo');
+
+begin
+    dbms_scheduler.create_credential(
+    CREDENTIAL_NAME => 'Theo',
+    USERNAME => 'Theo',
+    PASSWORD => 'V3et',
+    WINDOWS_DOMAIN  => 'localdomain');
+end;
 /
 
 */
