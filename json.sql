@@ -4,6 +4,150 @@ object {"name1":value1, "name2":"value2", ... }  The name is always in double qu
 array  [multiple values, , , ..]
 */
 
+select * from table (get_file_name ('C:\Work\garmin' || chr(92), 'json')) fn
+
+
+
+select to_clob (json_doc) from gmn_json_data where name = '2023-04-05_2023-07-14_113255650_sleepData.json';
+
+
+with dg_t as (select json_dataguide(json_clob) json_clob from gmn_json_data where name like '%userBioMetricProfileData%')
+select jt.* from dg_t,
+       json_table(json_clob, '$[*]'
+         columns
+           jpath   varchar2(40) path '$."o:path"',
+           type    varchar2(10) path '$."type"',
+           tlength number       path '$."o:length"') jt
+order by jt.jpath;
+
+with dg_t as (select json_dataguide(json_clob) json_clob from gmn_json_data where name like '%courses%')
+select replace (substr(jt.jpath, 3), '.','_') || ' ' ||
+case jt.type
+when 'number' then 'number (' || jt.tlength || ')'
+when 'boolean' then 'varchar2 (10)'
+else 'varchar2 (40)' end
+|| ' path ''' || jt.jpath || ''','from dg_t,
+       json_table(json_clob, '$[*]'
+         columns
+           jpath   varchar2(40) path '$."o:path"',
+           type    varchar2(10) path '$."type"',
+           tlength number       path '$."o:length"') jt
+order by jt.jpath;
+
+create or replace view v_gmn_json_courses
+as 
+select distinct jt.*, jd.person_id from gmn_json_data  jd,
+       json_table(jd.json_clob, '$[*]'
+         columns
+accessControl varchar2 (40) path '$.accessControl',
+courseName varchar2 (40) path '$.courseName',
+courseType varchar2 (40) path '$.courseType',
+createDate varchar2 (40) path '$.createDate',
+elevationGainMeter number (8) path '$.elevationGainMeter',
+elevationLossMeter number (8) path '$.elevationLossMeter',
+hasTurnDetectionDisabled varchar2 (10) path '$.hasTurnDetectionDisabled',
+startPoint_elevation number (32) path '$.startPoint.elevation',
+startPoint_latitude number (32) path '$.startPoint.latitude',
+startPoint_longitude number (16) path '$.startPoint.longitude',
+updateDate varchar2 (40) path '$.updateDate') jt
+where accessControl is not null and jd.name like  '%courses%'
+order by createDate;
+
+
+
+-- courses
+
+
+
+SELECT jt.*
+  FROM j_purchaseorder po,
+       json_table(po.po_document
+         COLUMNS ("Special Instructions",
+                  NESTED LineItems[*]
+                    COLUMNS (ItemNumber NUMBER,
+                             Description PATH Part.Description))) AS "JT";
+                                                                                                   
+                                                                                                    
+                                                                                                    
+SELECT jt.*
+  FROM j_purchaseorder,
+       json_table(po_document, '$'
+         COLUMNS (
+           requestor  VARCHAR2(32 CHAR) PATH '$.Requestor',
+           phone_type VARCHAR2(50 CHAR) FORMAT JSON WITH WRAPPER
+                      PATH '$.ShippingInstructions.Phone[*].type',
+           phone_num  VARCHAR2(50 CHAR) FORMAT JSON WITH WRAPPER
+                      PATH '$.ShippingInstructions.Phone[*].number')) AS "JT";
+
+REQUESTOR    PHONE_TYPE            PHONE_NUM
+---------    ----------            ---------
+Alexis Bull  ["Office", "Mobile"]  ["909-555-7307", "415-555-1234"]
+
+SELECT jt.*
+  FROM j_purchaseorder po,
+       json_table(po.po_document
+         COLUMNS (Requestor,
+                  NESTED ShippingInstructions.Phone[*]
+                    COLUMNS (type, "number"))) AS "JT";
+
+
+
+SELECT jt.*
+  FROM j_purchaseorder po,
+       json_table(po.po_document, '$'
+         COLUMNS (Requestor VARCHAR2(4000) PATH '$.Requestor',
+                  NESTED                   PATH '$.ShippingInstructions.Phone[*]'
+                    COLUMNS (type     VARCHAR2(4000) PATH '$.type',
+                             "number" VARCHAR2(4000) PATH '$.number'))) AS "JT";
+
+
+---------------------------------------- ---------- ----------
+$.averageRespiration                     number              4
+$.avgSleepStress                         number             32
+$.awakeCount                             number              2
+$.awakeSleepSeconds                      number              8
+$.calendarDate                           string             16
+$.deepSleepSeconds                       number              4
+$.highestRespiration                     number              4
+$.lightSleepSeconds                      number              8
+$.lowestRespiration                      number              4
+$.remSleepSeconds                        number              4
+$.restlessMomentCount                    number              4
+$.retro                                  boolean             8
+$.sleepEndTimestampGMT                   string             32
+
+$.sleepScores                            object            512
+$.sleepScores.awakeTimeScore             number              2
+$.sleepScores.awakeningsCountScore       number              2
+$.sleepScores.combinedAwakeScore         number              2
+$.sleepScores.deepScore                  number              2
+$.sleepScores.durationScore              number              4
+$.sleepScores.feedback                   string             64
+$.sleepScores.insight                    string             32
+$.sleepScores.interruptionsScore         number              2
+$.sleepScores.lightScore                 number              2
+$.sleepScores.overallScore               number              2
+$.sleepScores.qualityScore               number              2
+$.sleepScores.recoveryScore              number              4
+$.sleepScores.remScore                   number              4
+$.sleepScores.restfulnessScore           number              2
+$.sleepStartTimestampGMT                 string             32
+$.sleepWindowConfirmationType            string             32
+$.unmeasurableSeconds                    number              1
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 create or replace directory polar as 'C:\Work\garmin_bu\Polar';
 select * from table(get_file_name ('C:\Work\garmin_bu\Polar', 'json'));
 select file_name, substr(file_name, instr (file_name, chr(92), 1, 4) +1) fn  from table (get_file_name ('C:\Work\garmin_bu\Polar', 'json')) order by file_name
@@ -25,7 +169,7 @@ loop
   dbms_output.put_line (f.fn);
   l_dest_offset    := 1;
   l_src_offset     := 1;
-  l_bfile_csid      := 0;
+  l_bfile_csid     := 0;
   l_lang_context   := 0;
   l_warning        := 0;
   l_polar_file := bfilename('POLAR', f.fn);
@@ -912,4 +1056,33 @@ json_table (d.polar_json, '$.deviceDays[*]'  columns (
     }
   }
 }
+
+
+declare
+l_bfile bfile;
+l_clob  clob := empty_clob;
+l_blob  blob := empty_blob;
+l_string varchar2 (32767);
+l_id      integer (6);
+begin
+for j in (select substr (file_name, 16) my_file from table (get_file_name ('C:\Work\garmin' || chr (92), 'json'))
+          where substr (file_name, 16) not in (select name from gmn_json_data))
+loop
+   l_bfile := bfilename ('GARMIN', j.my_file);
+   if dbms_lob.fileexists (l_bfile) = 1
+   then
+--     l_last := 1;
+--	  loop 
+      insert into gmn_json_data (name, json_doc) values (j.my_file, empty_blob()) return id, json_doc into l_id, l_blob;
+      dbms_lob.fileopen(l_bfile, dbms_lob.file_readonly);
+      dbms_lob.loadfromfile(l_blob, l_bfile, dbms_lob.getlength(l_bfile));
+      dbms_lob.fileclose(l_bfile);
+	  update gmn_json_data set json_clob = to_clob (json_doc)  where id = l_id;
+      commit;
+  end if;
+end loop;
+commit;
+end;
+/
+
 
