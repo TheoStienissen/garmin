@@ -931,7 +931,9 @@ function get_heartrate (p_person_id in integer, p_range in integer) return integ
 is
 l_heartrate number (3);
 begin
-  select case p_range when 1 then hr_low when 2 then hr_medium when 3 then hr_high else null end into l_heartrate from gmn_users where id = p_range;
+  select case p_range when 1 then zone1 when 2 then zone2 when 3 then zone3 when 4 then zone4 when 5 then zone5  else null end
+  into l_heartrate from gmn_heartrate_zones where person_id = p_person_id;
+  
   return l_heartrate;
 
 exception when others then 
