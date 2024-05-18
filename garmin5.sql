@@ -680,33 +680,37 @@ l_return varchar2 (100);
 begin
   execute immediate 'truncate table gmn_csv_by_column_name';
   l_bfile := bfilename (p_directory, p_csv_file);
-  dbms_lob.fileopen (l_bfile);
-
-  loop
-    l_current := dbms_lob.instr (l_bfile, '0A', l_last, 1 );
-    exit when nvl (l_current, 0) = 0;
-    l_string := utl_raw.cast_to_varchar2 (dbms_lob.substr (l_bfile, l_current - l_last, l_last));
-
-  if l_first
-  then 
+  if dbms_lob.fileexists (l_bfile) = 1
+  then
+    dbms_lob.fileopen (l_bfile);  
     loop
-      l_cnt := l_cnt + 1;
-      l_next    := next_item;
-      l_column_header (l_cnt) := replace (l_next, 'session.');
-      exit when nvl (instr (l_string, ','), 0) = 0;
+      l_current := dbms_lob.instr (l_bfile, '0A', l_last, 1 );
+      exit when nvl (l_current, 0) = 0;
+      l_string  := utl_raw.cast_to_varchar2 (dbms_lob.substr (l_bfile, l_current - l_last, l_last));
+  
+    if l_first
+    then 
+      loop
+        l_cnt := l_cnt + 1;
+        l_next    := next_item;
+        l_column_header (l_cnt) := replace (l_next, 'session.');
+        exit when nvl (instr (l_string, ','), 0) = 0;
+      end loop;
+      l_first := FALSE;
+    else
+      for j in 1 .. l_cnt
+      loop 
+        l_next := next_item;
+        insert into gmn_csv_by_column_name (file_id, field, val) values (p_file_id, l_column_header (j), l_next);
+      end loop;
+    end if;
+    l_last := l_current + 1;
     end loop;
-    l_first := FALSE;
+    dbms_lob.close (l_bfile);
+    commit;
   else
-    for j in 1 .. l_cnt
-    loop 
-      l_next := next_item;
-      insert into gmn_csv_by_column_name (file_id, field, val) values (p_file_id, l_column_header (j), l_next);
-    end loop;
+    raise_application_error (-20001, 'Error in procedure parse_csv_by_column_name. File ' || p_csv_file || ' does not exist');
   end if;
-  l_last := l_current + 1;
-  end loop;
-  dbms_lob.close (l_bfile);
-  commit;
 
 exception when others then
     util.show_error ('Error in procedure parse_csv_by_column_name for file ID: ' || p_file_id, sqlerrm);
@@ -752,32 +756,36 @@ l_return varchar2 (1000);
 begin
   execute immediate 'truncate table gmn_csv_by_field_name';
   l_bfile  := bfilename (p_directory, p_csv_file);
-  dbms_lob.fileopen (l_bfile);
-
-  if p_skip1  -- Skip the first line?
+  if dbms_lob.fileexists (l_bfile) = 1
   then
-    l_current := dbms_lob.instr (l_bfile, '0A', l_last, 1 );
-    l_last := l_current + 1;
-  end if;
-
-  loop
-    l_current := dbms_lob.instr (l_bfile, '0A', l_last, 1 );
-    exit when nvl (l_current, 0) = 0;
-    l_string := utl_raw.cast_to_varchar2 (dbms_lob.substr (l_bfile, l_current - l_last, l_last));
-
+    dbms_lob.fileopen (l_bfile);
+    if p_skip1  -- Skip the first line?
+    then
+      l_current := dbms_lob.instr (l_bfile, '0A', l_last, 1 );
+      l_last := l_current + 1;
+    end if;
+  
     loop
-      l_rec1 := next_item;
-      l_rec2 := next_item;
-      l_rec3 := next_item;
-      if l_rec1 not like '%Data%' and l_rec1 not like '%Definition%' and l_rec1 not like '%unknown%'  and l_rec1 not like 'Field%' and l_rec1 is not null
-      then
-        insert into gmn_csv_by_field_name (file_id, field, val, unit) values (p_file_id, l_rec1, l_rec2, l_rec3);
-      end if;
-      exit when nvl(instr (l_string, ','), 0) = 0;
+      l_current := dbms_lob.instr (l_bfile, '0A', l_last, 1 );
+      exit when nvl (l_current, 0) = 0;
+      l_string := utl_raw.cast_to_varchar2 (dbms_lob.substr (l_bfile, l_current - l_last, l_last));
+  
+      loop
+        l_rec1 := next_item;
+        l_rec2 := next_item;
+        l_rec3 := next_item;
+        if l_rec1 not like '%Data%' and l_rec1 not like '%Definition%' and l_rec1 not like '%unknown%' and l_rec1 not like 'Field%' and l_rec1 is not null
+        then
+          insert into gmn_csv_by_field_name (file_id, field, val, unit) values (p_file_id, l_rec1, l_rec2, l_rec3);
+        end if;
+        exit when nvl(instr (l_string, ','), 0) = 0;
+      end loop;
+      l_last := l_current + 1;
     end loop;
-    l_last := l_current + 1;
-  end loop;
-  commit;
+    commit;
+  else
+    raise_application_error (-20001, 'Error in procedure parse_csv_by_field_name. File ' || p_csv_file || ' does not exist');
+  end if;
 
 exception when others then
     util.show_error ('Error in procedure parse_csv_by_field_name for file ID: ' || p_file_id, sqlerrm, true);
@@ -933,10 +941,13 @@ l_heartrate number (3);
 begin
   select case p_range when 1 then zone1 when 2 then zone2 when 3 then zone3 when 4 then zone4 when 5 then zone5  else null end
   into l_heartrate from gmn_heartrate_zones where person_id = p_person_id;
-  
   return l_heartrate;
 
-exception when others then 
+exception when no_data_found
+then 
+   util.show_error ('Error in function get_heartrate. Userid: ' || p_person_id || ' not present in table gmn_heartrate_zones.', sqlerrm);
+   return null;
+ when others then 
    util.show_error ('Error in function get_heartrate for userid: ' || p_person_id || ' and range: ' || p_range, sqlerrm);
    return null;
 end get_heartrate;
