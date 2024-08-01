@@ -6,7 +6,7 @@ DOC
   Purpose     :  Analyze data from Garmin watch in an Oracle database
   Status      :  Production Acceptance
   Contact     :  theo.stienissen@gmail.com
-  @C:\Users\Theo\OneDrive\Theo\Project\garmin\garmin<XX>.sql
+  @C:\Users\Theo\OneDrive\Theo\Project\garmin\garmin7.sql
   Fit Protocol https://developer.garmin.com/fit/protocol/
 
 Garmin data export: https://www.garmin.com/en-GB/account/datamanagement/exportdata/
@@ -26,6 +26,11 @@ Dependencies:
   6. Privilleges to run scheduler jobs (scheduler_admin)
   7. select privilege on dba_directories
 
+ToDo:
+Drop the columns from gmn_users:
+, hr_low        number (3)    not null default 100
+, hr_medium     number (3)    not null default 120
+, hr_high       number (3)    not null default 140
 
 #
 
@@ -112,12 +117,13 @@ create table gmn_csv_by_column_name
 , field        varchar2 (50)
 , val          varchar2 (60));
 
-create table gmn_csv_by_field_name
-( id           number generated always as identity
-, file_id      number
-, field        varchar2 (50)
-, val          varchar2 (60)
-, unit         varchar2 (50));
+create global temporary table gmn_csv_by_field_name
+( line_number      number (6)
+, column_position  number (3)
+, field            varchar2 (50)
+, val              varchar2 (150)
+, unit             varchar2 (50))
+on commit delete rows;
 
 create directory garmin               as 'C:\Work\garmin';
 create directory garmin_backup        as 'C:\Work\garmin\backup';
@@ -320,13 +326,62 @@ join gmn_fit_files ff on (si.fit_id = ff.id)
 join gmn_users u on (u.id = ff.user_id)
 join gmn_sport_profiles sp on (sp.sport_profile_name = si.sport_profile_name);
 
+
+create global temporary table gmn_excel_output
+( line_number  number (10),
+col001 varchar2 (200),col002 varchar2 (200),col003 varchar2 (200),col004 varchar2 (200),col005 varchar2 (200),col006 varchar2 (200),col007 varchar2 (200),
+col008 varchar2 (200),col009 varchar2 (200),col010 varchar2 (200),col011 varchar2 (200),col012 varchar2 (200),col013 varchar2 (200),col014 varchar2 (200),
+col015 varchar2 (200),col016 varchar2 (200),col017 varchar2 (200),col018 varchar2 (200),col019 varchar2 (200),col020 varchar2 (200),col021 varchar2 (200),
+col022 varchar2 (200),col023 varchar2 (200),col024 varchar2 (200),col025 varchar2 (200),col026 varchar2 (200),col027 varchar2 (200),col028 varchar2 (200),
+col029 varchar2 (200),col030 varchar2 (200),col031 varchar2 (200),col032 varchar2 (200),col033 varchar2 (200),col034 varchar2 (200),col035 varchar2 (200),
+col036 varchar2 (200),col037 varchar2 (200),col038 varchar2 (200),col039 varchar2 (200),col040 varchar2 (200),col041 varchar2 (200),col042 varchar2 (200),
+col043 varchar2 (200),col044 varchar2 (200),col045 varchar2 (200),col046 varchar2 (200),col047 varchar2 (200),col048 varchar2 (200),col049 varchar2 (200),
+col050 varchar2 (200),col051 varchar2 (200),col052 varchar2 (200),col053 varchar2 (200),col054 varchar2 (200),col055 varchar2 (200),col056 varchar2 (200),
+col057 varchar2 (200),col058 varchar2 (200),col059 varchar2 (200),col060 varchar2 (200),col061 varchar2 (200),col062 varchar2 (200),col063 varchar2 (200),
+col064 varchar2 (200),col065 varchar2 (200),col066 varchar2 (200),col067 varchar2 (200),col068 varchar2 (200),col069 varchar2 (200),col070 varchar2 (200),
+col071 varchar2 (200),col072 varchar2 (200),col073 varchar2 (200),col074 varchar2 (200),col075 varchar2 (200),col076 varchar2 (200),col077 varchar2 (200),
+col078 varchar2 (200),col079 varchar2 (200),col080 varchar2 (200),col081 varchar2 (200),col082 varchar2 (200),col083 varchar2 (200),col084 varchar2 (200),
+col085 varchar2 (200),col086 varchar2 (200),col087 varchar2 (200),col088 varchar2 (200),col089 varchar2 (200),col090 varchar2 (200),col091 varchar2 (200),
+col092 varchar2 (200),col093 varchar2 (200),col094 varchar2 (200),col095 varchar2 (200),col096 varchar2 (200),col097 varchar2 (200),col098 varchar2 (200),
+col099 varchar2 (200),col100 varchar2 (200),col101 varchar2 (200),col102 varchar2 (200),col103 varchar2 (200),col104 varchar2 (200),col105 varchar2 (200),
+col106 varchar2 (200),col107 varchar2 (200),col108 varchar2 (200),col109 varchar2 (200),col110 varchar2 (200),col111 varchar2 (200),col112 varchar2 (200),
+col113 varchar2 (200),col114 varchar2 (200),col115 varchar2 (200),col116 varchar2 (200),col117 varchar2 (200),col118 varchar2 (200),col119 varchar2 (200),
+col120 varchar2 (200),col121 varchar2 (200),col122 varchar2 (200),col123 varchar2 (200),col124 varchar2 (200),col125 varchar2 (200),col126 varchar2 (200),
+col127 varchar2 (200),col128 varchar2 (200),col129 varchar2 (200),col130 varchar2 (200),col131 varchar2 (200),col132 varchar2 (200),col133 varchar2 (200),
+col134 varchar2 (200),col135 varchar2 (200),col136 varchar2 (200),col137 varchar2 (200),col138 varchar2 (200),col139 varchar2 (200),col140 varchar2 (200),
+col141 varchar2 (200),col142 varchar2 (200),col143 varchar2 (200),col144 varchar2 (200),col145 varchar2 (200),col146 varchar2 (200),col147 varchar2 (200),
+col148 varchar2 (200),col149 varchar2 (200),col150 varchar2 (200),col151 varchar2 (200),col152 varchar2 (200),col153 varchar2 (200),col154 varchar2 (200),
+col155 varchar2 (200),col156 varchar2 (200),col157 varchar2 (200),col158 varchar2 (200),col159 varchar2 (200),col160 varchar2 (200),col161 varchar2 (200),
+col162 varchar2 (200),col163 varchar2 (200),col164 varchar2 (200),col165 varchar2 (200),col166 varchar2 (200),col167 varchar2 (200),col168 varchar2 (200),
+col169 varchar2 (200),col170 varchar2 (200),col171 varchar2 (200),col172 varchar2 (200),col173 varchar2 (200),col174 varchar2 (200),col175 varchar2 (200),
+col176 varchar2 (200),col177 varchar2 (200),col178 varchar2 (200),col179 varchar2 (200),col180 varchar2 (200),col181 varchar2 (200),col182 varchar2 (200),
+col183 varchar2 (200),col184 varchar2 (200),col185 varchar2 (200),col186 varchar2 (200),col187 varchar2 (200),col188 varchar2 (200),col189 varchar2 (200),
+col190 varchar2 (200),col191 varchar2 (200),col192 varchar2 (200),col193 varchar2 (200),col194 varchar2 (200),col195 varchar2 (200),col196 varchar2 (200),
+col197 varchar2 (200),col198 varchar2 (200),col199 varchar2 (200),col200 varchar2 (200),col201 varchar2 (200),col202 varchar2 (200),col203 varchar2 (200),
+col204 varchar2 (200),col205 varchar2 (200),col206 varchar2 (200),col207 varchar2 (200),col208 varchar2 (200),col209 varchar2 (200),col210 varchar2 (200),
+col211 varchar2 (200),col212 varchar2 (200),col213 varchar2 (200),col214 varchar2 (200),col215 varchar2 (200),col216 varchar2 (200),col217 varchar2 (200),
+col218 varchar2 (200),col219 varchar2 (200),col220 varchar2 (200),col221 varchar2 (200),col222 varchar2 (200),col223 varchar2 (200),col224 varchar2 (200),
+col225 varchar2 (200),col226 varchar2 (200),col227 varchar2 (200),col228 varchar2 (200),col229 varchar2 (200),col230 varchar2 (200),col231 varchar2 (200),
+col232 varchar2 (200),col233 varchar2 (200),col234 varchar2 (200),col235 varchar2 (200),col236 varchar2 (200),col237 varchar2 (200),col238 varchar2 (200),
+col239 varchar2 (200),col240 varchar2 (200),col241 varchar2 (200),col242 varchar2 (200),col243 varchar2 (200),col244 varchar2 (200),col245 varchar2 (200),
+col246 varchar2 (200),col247 varchar2 (200),col248 varchar2 (200),col249 varchar2 (200),col250 varchar2 (200),col251 varchar2 (200),col252 varchar2 (200),
+col253 varchar2 (200),col254 varchar2 (200),col255 varchar2 (200),col256 varchar2 (200),col257 varchar2 (200),col258 varchar2 (200),col259 varchar2 (200),
+col260 varchar2 (200),col261 varchar2 (200),col262 varchar2 (200),col263 varchar2 (200),col264 varchar2 (200),col265 varchar2 (200),col266 varchar2 (200),
+col267 varchar2 (200),col268 varchar2 (200),col269 varchar2 (200),col270 varchar2 (200),col271 varchar2 (200),col272 varchar2 (200),col273 varchar2 (200),
+col274 varchar2 (200),col275 varchar2 (200),col276 varchar2 (200),col277 varchar2 (200),col278 varchar2 (200),col279 varchar2 (200),col280 varchar2 (200),
+col281 varchar2 (200),col282 varchar2 (200),col283 varchar2 (200),col284 varchar2 (200),col285 varchar2 (200),col286 varchar2 (200),col287 varchar2 (200),
+col288 varchar2 (200),col289 varchar2 (200),col290 varchar2 (200),col291 varchar2 (200),col292 varchar2 (200),col293 varchar2 (200),col294 varchar2 (200),
+col295 varchar2 (200),col296 varchar2 (200),col297 varchar2 (200),col298 varchar2 (200))
+on commit delete rows;
+
+
 set serveroutput on size unlimited
 
 create or replace package garmin_pkg
 is
 g_max_int        constant integer     := power (2, 31);
-g_windows_slash  constant varchar2(1) := chr (92);
-g_linux_slash    constant varchar2(1) := chr (47);
+
+function  slash return varchar2;
 
 function  extract_filename (p_filename in varchar2) return varchar2;
 
@@ -335,6 +390,8 @@ function  change_extention (p_filename in varchar2, p_new_extention in varchar2)
 function  directory_path (p_directory in varchar2 default 'GARMIN') return varchar2;
 
 procedure set_nls;
+
+function  file_to_blob (p_dir in varchar2, p_filename in varchar2) return blob;
 
 function  ds_to_varchar2 (p_ds in interval day to second) return varchar2;
 
@@ -358,7 +415,7 @@ procedure convert_fit_file_to_csv (p_file_name in varchar2, p_routine in varchar
 
 procedure parse_csv_by_column_name (p_csv_file in varchar2, p_file_id in integer, p_directory in varchar2 default 'GARMIN');
 
-procedure parse_csv_by_field_name (p_csv_file in varchar2, p_file_id in integer, p_directory in varchar2 default 'GARMIN', p_skip1 boolean default true);
+procedure parse_csv_by_field_name (p_csv_file in varchar2, p_directory in varchar2 default 'GARMIN', p_skip integer default 1);
 
 procedure load_session_info (p_directory in varchar2 default 'GARMIN');
 
@@ -378,6 +435,8 @@ function  analyze_graph (p_person_id in integer, p_field in integer, p_sport_pro
 
 procedure load_json_files (p_person_id in integer, p_directory in varchar2 default 'GARMIN');
 
+procedure evaluate_json_data;
+
 procedure archive_fit_files (p_retention_days in integer default 7);
 
 end garmin_pkg;
@@ -386,6 +445,21 @@ end garmin_pkg;
 
 create or replace package body garmin_pkg
 is
+function slash return varchar2
+is
+begin
+  if dbms_utility.port_string like '%WIN%'
+  then return chr (92);  -- Windows
+  else return chr (47);  -- Linux
+  end if;
+
+exception when others then
+  util.show_error ('Error in function function slash', sqlerrm);
+  return null;
+end slash;
+ 
+/******************************************************************************************************************************************************************/
+
 --
 -- Strip filename from a path / string. Cut after the last slash or backslash
 --
@@ -393,11 +467,7 @@ function extract_filename (p_filename in varchar2) return varchar2
 is
 l_filename varchar2 (200) := p_filename;
 begin
-  if    instr (p_filename , g_windows_slash) > 0  -- Windows
-  then  select substr (p_filename, - instr (reverse (p_filename), chr(92)) + 1) into l_filename from dual;
-  elsif instr (p_filename , g_linux_slash) > 0  -- Linux
-  then  select substr (p_filename, - instr (reverse (p_filename), chr(47)) + 1) into l_filename from dual;
-  end if;
+  select substr (p_filename, - instr (reverse (p_filename), slash) + 1) into l_filename from dual;
   return l_filename;
  
 exception when others then
@@ -434,7 +504,7 @@ function directory_path (p_directory in varchar2 default 'GARMIN') return varcha
 is
 l_directory_path varchar2 (200);
 begin
-  select directory_path || chr (92) into l_directory_path from dba_directories where directory_name = upper (p_directory);
+  select case when directory_path like '%' || slash then directory_path else directory_path || slash end into l_directory_path from dba_directories where directory_name = upper (p_directory);
   return l_directory_path;  
 
 exception when others then
@@ -450,12 +520,42 @@ end directory_path;
 procedure set_nls
 is
 begin
-execute immediate 'alter session set NLS_DATE_FORMAT = ''YYYY/MM/DD HH24:MI:SS''';
-execute immediate 'alter session set NLS_NUMERIC_CHARACTERS = ''.,''';
+  execute immediate 'alter session set NLS_DATE_FORMAT = ''YYYY/MM/DD HH24:MI:SS''';
+  execute immediate 'alter session set NLS_NUMERIC_CHARACTERS = ''.,''';
 
 exception when others then
   util.show_error ('Error in procedure set_nls', sqlerrm);
 end set_nls;
+
+/******************************************************************************************************************************************************************/
+
+--
+-- Load a file from disk and return it as a blob
+--
+function  file_to_blob (p_dir in varchar2, p_filename in varchar2) return blob
+is
+  l_bfile  bfile;
+  l_blob   blob;
+  l_dest_offset integer := 1;
+  l_src_offset  integer := 1;
+begin
+  l_bfile := bfilename (p_dir, p_filename);
+  dbms_lob.fileopen (l_bfile, dbms_lob.file_readonly);
+  dbms_lob.createtemporary(l_blob, false);
+  if dbms_lob.getlength(l_bfile) > 0 then
+    dbms_lob.loadblobfromfile (
+      dest_lob    => l_blob,
+      src_bfile   => l_bfile,
+      amount      => dbms_lob.lobmaxsize,
+      dest_offset => l_dest_offset,
+      src_offset  => l_src_offset);
+  end if;
+  dbms_lob.fileclose(l_bfile);
+  return l_blob;
+  
+exception when others then
+  util.show_error ('Error in function  file_to_blob for file: ' || p_filename || ' in directory: ' || p_dir, sqlerrm);
+end file_to_blob;
 
 /******************************************************************************************************************************************************************/
 
@@ -504,8 +604,8 @@ is
 l_ds interval day to second;
 begin
   if    p_string is null or p_string = '--'  then l_ds := null;
-  elsif instr (p_string, ':') = 0            then l_ds :=  to_dsinterval ( '00 00:00:' || replace (p_string, ',', '.'));
-  elsif instr (p_string, ':', 1, 2) = 0      then l_ds :=  to_dsinterval ( '00 00:'    || replace (p_string, ',', '.'));
+  elsif instr (p_string, ':') = 0            then l_ds := to_dsinterval ( '00 00:00:' || replace (p_string, ',', '.'));
+  elsif instr (p_string, ':', 1, 2) = 0      then l_ds := to_dsinterval ( '00 00:'    || replace (p_string, ',', '.'));
   else  l_ds := to_dsinterval ( '00 ' || replace (p_string, ',', '.'));
   end if;
   return l_ds;
@@ -625,7 +725,7 @@ is
 begin
   insert into gmn_fit_files (file_name)
       select garmin_pkg.extract_filename (file_name) from table (get_file_name (garmin_pkg.directory_path (p_directory), 'fit'))
-	   where (instr(file_name, g_windows_slash, 1, 4) = 0 and instr(file_name, g_linux_slash, 1, 4) = 0)
+	   where (instr(file_name, slash, 1, 4) = 0)
 	     and  garmin_pkg.extract_filename (file_name) not in (select file_name from gmn_fit_files) order by 1 desc;		
   commit;
 
@@ -745,74 +845,148 @@ end parse_csv_by_column_name;
 --
 -- Parse_csv_by_field_name
 --
-procedure parse_csv_by_field_name (p_csv_file in varchar2, p_file_id in integer, p_directory in varchar2 default 'GARMIN', p_skip1 boolean default true)
+procedure parse_csv_by_field_name (p_csv_file in varchar2, p_directory in varchar2 default 'GARMIN', p_skip integer default 1)
 is
-l_bfile          bfile;
-l_last           number := 1;
-l_current        number;
-l_string         varchar2 (32767);
-l_rec1           varchar2 (1000);
-l_rec2           varchar2 (1000);
-l_rec3           varchar2 (1000);
---
-function next_item return varchar2 
-is
-l_pos    integer;
-l_return varchar2 (1000);
-  begin
-	if substr (l_string, 1, 1) = ',' then l_string := substr (l_string, 2); end if;
-	if substr (l_string, 1, 1) = '"'
-	then 
-	  l_pos    := instr  (l_string, '"', 2, 1);
-	  l_return := substr (l_string, 2, l_pos - 2);
-	else
-	  l_pos    := instr  (l_string, ',');
-	  l_return := substr (l_string, 1, l_pos - 1);
-	end if;
-      l_string := substr (l_string, l_pos + 1);	
-	return l_return;
-	
-  exception when others then
-    util.show_error ('Error in function next_item', sqlerrm);
-    return null;
-  end next_item;
---
 begin
-  execute immediate 'truncate table gmn_csv_by_field_name';
-  l_bfile  := bfilename (p_directory, p_csv_file);
-  if dbms_lob.fileexists (l_bfile) = 1
-  then
-    dbms_lob.fileopen (l_bfile);
-    if p_skip1  -- Skip the first line?
-    then
-      l_current := dbms_lob.instr (l_bfile, '0A', l_last, 1 );
-      l_last := l_current + 1;
-    end if;
   
-    loop
-      l_current := dbms_lob.instr (l_bfile, '0A', l_last, 1 );
-      exit when nvl (l_current, 0) = 0;
-      l_string := utl_raw.cast_to_varchar2 (dbms_lob.substr (l_bfile, l_current - l_last, l_last));
+  insert into gmn_excel_output (
+  line_number, col001,col002,col003,col004,col005,col006,col007,col008,col009,col010,col011,col012,col013,col014,col015,col016,
+  col017,col018,col019,col020,col021,col022,col023,col024,col025,col026,col027,col028,col029,col030,col031,col032,col033,col034,col035,
+  col036,col037,col038,col039,col040,col041,col042,col043,col044,col045,col046,col047,col048,col049,col050,col051,col052,col053,col054,
+  col055,col056,col057,col058,col059,col060,col061,col062,col063,col064,col065,col066,col067,col068,col069,col070,col071,col072,col073,
+  col074,col075,col076,col077,col078,col079,col080,col081,col082,col083,col084,col085,col086,col087,col088,col089,col090,col091,col092,
+  col093,col094,col095,col096,col097,col098,col099,col100,col101,col102,col103,col104,col105,col106,col107,col108,col109,col110,col111,
+  col112,col113,col114,col115,col116,col117,col118,col119,col120,col121,col122,col123,col124,col125,col126,col127,col128,col129,col130,
+  col131,col132,col133,col134,col135,col136,col137,col138,col139,col140,col141,col142,col143,col144,col145,col146,col147,col148,col149,
+  col150,col151,col152,col153,col154,col155,col156,col157,col158,col159,col160,col161,col162,col163,col164,col165,col166,col167,col168,
+  col169,col170,col171,col172,col173,col174,col175,col176,col177,col178,col179,col180,col181,col182,col183,col184,col185,col186,col187,
+  col188,col189,col190,col191,col192,col193,col194,col195,col196,col197,col198,col199,col200,col201,col202,col203,col204,col205,col206,
+  col207,col208,col209,col210,col211,col212,col213,col214,col215,col216,col217,col218,col219,col220,col221,col222,col223,col224,col225,
+  col226,col227,col228,col229,col230,col231,col232,col233,col234,col235,col236,col237,col238,col239,col240,col241,col242,col243,col244,
+  col245,col246,col247,col248,col249,col250,col251,col252,col253,col254,col255,col256,col257,col258,col259,col260,col261,col262,col263,
+  col264,col265,col266,col267,col268,col269,col270,col271,col272,col273,col274,col275,col276,col277,col278,col279,col280,col281,col282,
+  col283,col284,col285,col286,col287,col288,col289,col290,col291,col292,col293,col294,col295,col296,col297)
+  select line_number, col001,col002,col003,col004,col005,col006,col007,col008,col009,col010,col011,col012,col013,col014,col015,col016,
+  col017,col018,col019,col020,col021,col022,col023,col024,col025,col026,col027,col028,col029,col030,col031,col032,col033,col034,col035,
+  col036,col037,col038,col039,col040,col041,col042,col043,col044,col045,col046,col047,col048,col049,col050,col051,col052,col053,col054,
+  col055,col056,col057,col058,col059,col060,col061,col062,col063,col064,col065,col066,col067,col068,col069,col070,col071,col072,col073,
+  col074,col075,col076,col077,col078,col079,col080,col081,col082,col083,col084,col085,col086,col087,col088,col089,col090,col091,col092,
+  col093,col094,col095,col096,col097,col098,col099,col100,col101,col102,col103,col104,col105,col106,col107,col108,col109,col110,col111,
+  col112,col113,col114,col115,col116,col117,col118,col119,col120,col121,col122,col123,col124,col125,col126,col127,col128,col129,col130,
+  col131,col132,col133,col134,col135,col136,col137,col138,col139,col140,col141,col142,col143,col144,col145,col146,col147,col148,col149,
+  col150,col151,col152,col153,col154,col155,col156,col157,col158,col159,col160,col161,col162,col163,col164,col165,col166,col167,col168,
+  col169,col170,col171,col172,col173,col174,col175,col176,col177,col178,col179,col180,col181,col182,col183,col184,col185,col186,col187,
+  col188,col189,col190,col191,col192,col193,col194,col195,col196,col197,col198,col199,col200,col201,col202,col203,col204,col205,col206,
+  col207,col208,col209,col210,col211,col212,col213,col214,col215,col216,col217,col218,col219,col220,col221,col222,col223,col224,col225,
+  col226,col227,col228,col229,col230,col231,col232,col233,col234,col235,col236,col237,col238,col239,col240,col241,col242,col243,col244,
+  col245,col246,col247,col248,col249,col250,col251,col252,col253,col254,col255,col256,col257,col258,col259,col260,col261,col262,col263,
+  col264,col265,col266,col267,col268,col269,col270,col271,col272,col273,col274,col275,col276,col277,col278,col279,col280,col281,col282,
+  col283,col284,col285,col286,col287,col288,col289,col290,col291,col292,col293,col294,col295,col296,col297
+  from table (apex_data_parser.parse (p_content => file_to_blob (p_directory, p_csv_file), p_file_name =>  p_csv_file, p_skip_rows => p_skip))
+  where col001 = 'Data' and col003 != 'unknown';
+   
+  insert into gmn_csv_by_field_name (line_number, column_position, field, val, unit)
+  select line_number,   4, col004, col005, col006 from gmn_excel_output where col004 is not null and col004 != 'unknown' union all 
+  select line_number,   7, col007, col008, col009 from gmn_excel_output where col007 is not null and col007 != 'unknown' union all 
+  select line_number,  10, col010, col011, col012 from gmn_excel_output where col010 is not null and col010 != 'unknown' union all 
+  select line_number,  13, col013, col014, col015 from gmn_excel_output where col013 is not null and col013 != 'unknown' union all 
+  select line_number,  16, col016, col017, col018 from gmn_excel_output where col016 is not null and col016 != 'unknown' union all 
+  select line_number,  19, col019, col020, col021 from gmn_excel_output where col019 is not null and col019 != 'unknown' union all 
+  select line_number,  22, col022, col023, col024 from gmn_excel_output where col022 is not null and col022 != 'unknown' union all 
+  select line_number,  25, col025, col026, col027 from gmn_excel_output where col025 is not null and col025 != 'unknown' union all 
+  select line_number,  28, col028, col029, col030 from gmn_excel_output where col028 is not null and col028 != 'unknown' union all 
+  select line_number,  31, col031, col032, col033 from gmn_excel_output where col031 is not null and col031 != 'unknown' union all 
+  select line_number,  34, col034, col035, col036 from gmn_excel_output where col034 is not null and col034 != 'unknown' union all 
+  select line_number,  37, col037, col038, col039 from gmn_excel_output where col037 is not null and col037 != 'unknown' union all 
+  select line_number,  40, col040, col041, col042 from gmn_excel_output where col040 is not null and col040 != 'unknown' union all 
+  select line_number,  43, col043, col044, col045 from gmn_excel_output where col043 is not null and col043 != 'unknown' union all 
+  select line_number,  46, col046, col047, col048 from gmn_excel_output where col046 is not null and col046 != 'unknown' union all 
+  select line_number,  49, col049, col050, col051 from gmn_excel_output where col049 is not null and col049 != 'unknown' union all 
+  select line_number,  52, col052, col053, col054 from gmn_excel_output where col052 is not null and col052 != 'unknown' union all 
+  select line_number,  55, col055, col056, col057 from gmn_excel_output where col055 is not null and col055 != 'unknown' union all 
+  select line_number,  58, col058, col059, col060 from gmn_excel_output where col058 is not null and col058 != 'unknown' union all 
+  select line_number,  61, col061, col062, col063 from gmn_excel_output where col061 is not null and col061 != 'unknown' union all 
+  select line_number,  64, col064, col065, col066 from gmn_excel_output where col064 is not null and col064 != 'unknown' union all 
+  select line_number,  67, col067, col068, col069 from gmn_excel_output where col067 is not null and col067 != 'unknown' union all 
+  select line_number,  70, col070, col071, col072 from gmn_excel_output where col070 is not null and col070 != 'unknown' union all 
+  select line_number,  73, col073, col074, col075 from gmn_excel_output where col073 is not null and col073 != 'unknown' union all 
+  select line_number,  76, col076, col077, col078 from gmn_excel_output where col076 is not null and col076 != 'unknown' union all 
+  select line_number,  79, col079, col080, col081 from gmn_excel_output where col079 is not null and col079 != 'unknown' union all 
+  select line_number,  82, col082, col083, col084 from gmn_excel_output where col082 is not null and col082 != 'unknown' union all 
+  select line_number,  85, col085, col086, col087 from gmn_excel_output where col085 is not null and col085 != 'unknown' union all 
+  select line_number,  88, col088, col089, col090 from gmn_excel_output where col088 is not null and col088 != 'unknown' union all 
+  select line_number,  91, col091, col092, col093 from gmn_excel_output where col091 is not null and col091 != 'unknown' union all 
+  select line_number,  94, col094, col095, col096 from gmn_excel_output where col094 is not null and col094 != 'unknown' union all 
+  select line_number,  97, col097, col098, col099 from gmn_excel_output where col097 is not null and col097 != 'unknown' union all 
+  select line_number, 100, col100, col101, col102 from gmn_excel_output where col100 is not null and col100 != 'unknown' union all 
+  select line_number, 103, col103, col104, col105 from gmn_excel_output where col103 is not null and col103 != 'unknown' union all 
+  select line_number, 106, col106, col107, col108 from gmn_excel_output where col106 is not null and col106 != 'unknown' union all 
+  select line_number, 109, col109, col110, col111 from gmn_excel_output where col109 is not null and col109 != 'unknown' union all 
+  select line_number, 112, col112, col113, col114 from gmn_excel_output where col112 is not null and col112 != 'unknown' union all 
+  select line_number, 115, col115, col116, col117 from gmn_excel_output where col115 is not null and col115 != 'unknown' union all 
+  select line_number, 118, col118, col119, col120 from gmn_excel_output where col118 is not null and col118 != 'unknown' union all 
+  select line_number, 121, col121, col122, col123 from gmn_excel_output where col121 is not null and col121 != 'unknown' union all 
+  select line_number, 124, col124, col125, col126 from gmn_excel_output where col124 is not null and col124 != 'unknown' union all 
+  select line_number, 127, col127, col128, col129 from gmn_excel_output where col127 is not null and col127 != 'unknown' union all 
+  select line_number, 130, col130, col131, col132 from gmn_excel_output where col130 is not null and col130 != 'unknown' union all 
+  select line_number, 133, col133, col134, col135 from gmn_excel_output where col133 is not null and col133 != 'unknown' union all 
+  select line_number, 136, col136, col137, col138 from gmn_excel_output where col136 is not null and col136 != 'unknown' union all 
+  select line_number, 139, col139, col140, col141 from gmn_excel_output where col139 is not null and col139 != 'unknown' union all 
+  select line_number, 142, col142, col143, col144 from gmn_excel_output where col142 is not null and col142 != 'unknown' union all 
+  select line_number, 145, col145, col146, col147 from gmn_excel_output where col145 is not null and col145 != 'unknown' union all 
+  select line_number, 148, col148, col149, col150 from gmn_excel_output where col148 is not null and col148 != 'unknown' union all 
+  select line_number, 151, col151, col152, col153 from gmn_excel_output where col151 is not null and col151 != 'unknown' union all 
+  select line_number, 154, col154, col155, col156 from gmn_excel_output where col154 is not null and col154 != 'unknown' union all 
+  select line_number, 157, col157, col158, col159 from gmn_excel_output where col157 is not null and col157 != 'unknown' union all 
+  select line_number, 160, col160, col161, col162 from gmn_excel_output where col160 is not null and col160 != 'unknown' union all 
+  select line_number, 163, col163, col164, col165 from gmn_excel_output where col163 is not null and col163 != 'unknown' union all 
+  select line_number, 166, col166, col167, col168 from gmn_excel_output where col166 is not null and col166 != 'unknown' union all 
+  select line_number, 169, col169, col170, col171 from gmn_excel_output where col169 is not null and col169 != 'unknown' union all 
+  select line_number, 172, col172, col173, col174 from gmn_excel_output where col172 is not null and col172 != 'unknown' union all 
+  select line_number, 175, col175, col176, col177 from gmn_excel_output where col175 is not null and col175 != 'unknown' union all 
+  select line_number, 178, col178, col179, col180 from gmn_excel_output where col178 is not null and col178 != 'unknown' union all 
+  select line_number, 181, col181, col182, col183 from gmn_excel_output where col181 is not null and col181 != 'unknown' union all 
+  select line_number, 184, col184, col185, col186 from gmn_excel_output where col184 is not null and col184 != 'unknown' union all 
+  select line_number, 187, col187, col188, col189 from gmn_excel_output where col187 is not null and col187 != 'unknown' union all 
+  select line_number, 190, col190, col191, col192 from gmn_excel_output where col190 is not null and col190 != 'unknown' union all 
+  select line_number, 193, col193, col194, col195 from gmn_excel_output where col193 is not null and col193 != 'unknown' union all 
+  select line_number, 196, col196, col197, col198 from gmn_excel_output where col196 is not null and col196 != 'unknown' union all 
+  select line_number, 199, col199, col200, col201 from gmn_excel_output where col199 is not null and col199 != 'unknown' union all 
+  select line_number, 202, col202, col203, col204 from gmn_excel_output where col202 is not null and col202 != 'unknown' union all 
+  select line_number, 205, col205, col206, col207 from gmn_excel_output where col205 is not null and col205 != 'unknown' union all 
+  select line_number, 208, col208, col209, col210 from gmn_excel_output where col208 is not null and col208 != 'unknown' union all 
+  select line_number, 211, col211, col212, col213 from gmn_excel_output where col211 is not null and col211 != 'unknown' union all 
+  select line_number, 214, col214, col215, col216 from gmn_excel_output where col214 is not null and col214 != 'unknown' union all 
+  select line_number, 217, col217, col218, col219 from gmn_excel_output where col217 is not null and col217 != 'unknown' union all 
+  select line_number, 220, col220, col221, col222 from gmn_excel_output where col220 is not null and col220 != 'unknown' union all 
+  select line_number, 223, col223, col224, col225 from gmn_excel_output where col223 is not null and col223 != 'unknown' union all 
+  select line_number, 226, col226, col227, col228 from gmn_excel_output where col226 is not null and col226 != 'unknown' union all 
+  select line_number, 229, col229, col230, col231 from gmn_excel_output where col229 is not null and col229 != 'unknown' union all 
+  select line_number, 232, col232, col233, col234 from gmn_excel_output where col232 is not null and col232 != 'unknown' union all 
+  select line_number, 235, col235, col236, col237 from gmn_excel_output where col235 is not null and col235 != 'unknown' union all 
+  select line_number, 238, col238, col239, col240 from gmn_excel_output where col238 is not null and col238 != 'unknown' union all 
+  select line_number, 241, col241, col242, col243 from gmn_excel_output where col241 is not null and col241 != 'unknown' union all 
+  select line_number, 244, col244, col245, col246 from gmn_excel_output where col244 is not null and col244 != 'unknown' union all 
+  select line_number, 247, col247, col248, col249 from gmn_excel_output where col247 is not null and col247 != 'unknown' union all 
+  select line_number, 250, col250, col251, col252 from gmn_excel_output where col250 is not null and col250 != 'unknown' union all 
+  select line_number, 253, col253, col254, col255 from gmn_excel_output where col253 is not null and col253 != 'unknown' union all 
+  select line_number, 256, col256, col257, col258 from gmn_excel_output where col256 is not null and col256 != 'unknown' union all 
+  select line_number, 259, col259, col260, col261 from gmn_excel_output where col259 is not null and col259 != 'unknown' union all 
+  select line_number, 262, col262, col263, col264 from gmn_excel_output where col262 is not null and col262 != 'unknown' union all 
+  select line_number, 265, col265, col266, col267 from gmn_excel_output where col265 is not null and col265 != 'unknown' union all 
+  select line_number, 268, col268, col269, col270 from gmn_excel_output where col268 is not null and col268 != 'unknown' union all 
+  select line_number, 271, col271, col272, col273 from gmn_excel_output where col271 is not null and col271 != 'unknown' union all 
+  select line_number, 274, col274, col275, col276 from gmn_excel_output where col274 is not null and col274 != 'unknown' union all 
+  select line_number, 277, col277, col278, col279 from gmn_excel_output where col277 is not null and col277 != 'unknown' union all 
+  select line_number, 280, col280, col281, col282 from gmn_excel_output where col280 is not null and col280 != 'unknown' union all 
+  select line_number, 283, col283, col284, col285 from gmn_excel_output where col283 is not null and col283 != 'unknown' union all 
+  select line_number, 286, col286, col287, col288 from gmn_excel_output where col286 is not null and col286 != 'unknown' union all 
+  select line_number, 289, col289, col290, col291 from gmn_excel_output where col289 is not null and col289 != 'unknown' union all 
+  select line_number, 292, col292, col293, col294 from gmn_excel_output where col292 is not null and col292 != 'unknown' union all 
+  select line_number, 295, col295, col296, col297 from gmn_excel_output where col295 is not null and col295 != 'unknown';
   
-      loop
-        l_rec1 := next_item;
-        l_rec2 := next_item;
-        l_rec3 := next_item;
-        if l_rec1 not like '%Data%' and l_rec1 not like '%Definition%' and l_rec1 not like '%unknown%' and l_rec1 not like 'Field%' and l_rec1 is not null
-        then
-          insert into gmn_csv_by_field_name (file_id, field, val, unit) values (p_file_id, l_rec1, l_rec2, l_rec3);
-        end if;
-        exit when nvl(instr (l_string, ','), 0) = 0;
-      end loop;
-      l_last := l_current + 1;
-    end loop;
-    commit;
-  else
-    raise_application_error (-20001, 'Error in procedure parse_csv_by_field_name. File ' || p_csv_file || ' does not exist');
-  end if;
-
 exception when others then
-    util.show_error ('Error in procedure parse_csv_by_field_name for file ID: ' || p_file_id, sqlerrm, true);
+    util.show_error ('Error in procedure parse_csv_by_field_name for csv file: ' || p_csv_file, sqlerrm, true);
 end parse_csv_by_field_name;
 
 /******************************************************************************************************************************************************************/
@@ -823,43 +997,45 @@ end parse_csv_by_field_name;
 procedure load_session_info (p_directory in varchar2 default 'GARMIN')
 is
 l_column_list    varchar2 (2000);
-l_file_list      varchar2 (2000);
+l_data_list      varchar2 (2000);
 begin
   set_nls;
   garmin_pkg.remove_csv_files;
   garmin_pkg.sync_fit_files;
-  for ff in (select gff.id, gf.file_name, extract_filename (gf.file_name) fn from table (get_file_name (directory_path (p_directory), 'fit')) gf, gmn_fit_files gff
-             where (instr (gf.file_name, g_windows_slash, 1, 4) = 0 and instr (gf.file_name, g_linux_slash, 1, 4) = 0)
+  for ff in (select gff.id, gf.file_name, change_extention (extract_filename (gf.file_name), 'csv') csv_file from table (get_file_name (directory_path (p_directory), 'fit')) gf, gmn_fit_files gff
+             where instr (gf.file_name, slash, 1, 4) = 0
                and extract_filename (gf.file_name) = gff.file_name and gff.training is null)
   loop
 	begin
       garmin_pkg.convert_fit_file_to_csv (ff.file_name, 'FitToCSV-session.bat');		
-	  garmin_pkg.parse_csv_by_field_name (change_extention (ff.fn, 'csv'), ff.id, p_directory);
+	  garmin_pkg.parse_csv_by_field_name (ff.csv_file, p_directory);
 	  l_column_list  := 'insert into gmn_session_info (fit_id, ';
-      l_file_list    := '(' || to_char (ff.id) || ', ';
-
+      l_data_list    := '(' || to_char (ff.id) || ', ';
       for j in (select distinct tc.column_name, tc.data_type, gc.unit, gc.val 
                 from gmn_csv_by_field_name gc, user_tab_columns tc where tc.table_name = 'GMN_SESSION_INFO'  and upper (gc.field) = tc.column_name)
       loop
         l_column_list := l_column_list || j.column_name  || ', ';
-        if    j.unit      = 'semicircles' then l_file_list := l_file_list || ' garmin_pkg.semicircles_to_lon_lat (' || j.val || '), ';
-        elsif j.data_type = 'NUMBER'      then l_file_list := l_file_list || j.val || ', ';
-        elsif j.data_type = 'DATE'        then l_file_list := l_file_list || ' garmin_pkg.date_offset_to_date (' || j.val || '), ';
-        else l_file_list := l_file_list || '''' || j.val || ''', ';
-        end if; 
+		l_data_list := l_data_list ||
+		case
+		  when j.unit      = 'semicircles' then ' garmin_pkg.semicircles_to_lon_lat (' || j.val || '), '
+		  when j.data_type = 'NUMBER'      then j.val || ', '
+		  when j.data_type = 'DATE'        then ' garmin_pkg.date_offset_to_date (' || j.val || '), '
+		  else '''' || j.val || ''', ' end;
       end loop;
-      l_column_list := rtrim (rtrim (l_column_list), ',') || ') values ';
-      l_file_list   := rtrim (rtrim (l_file_list)  , ',') || ')';  
-      execute immediate l_column_list || l_file_list;
+      l_column_list := substr (l_column_list, 1, length (l_column_list) - 2) || ') values ';
+      l_data_list   := substr (l_data_list  , 1, length (l_data_list)   - 2) || ')'; 
+      execute immediate l_column_list || l_data_list;
 	  update gmn_fit_files set training = 1 where id = ff.id;
 	  commit;
-	  exception when others then null;
-	  end;
+	  exception when others
+	  then 
+	    dbms_output.put_line (l_column_list);
+	    dbms_output.put_line (l_data_list);
+	end;
   end loop;
 
 exception when others then
-    dbms_output.put_line (l_column_list);
-	dbms_output.put_line (l_file_list);
+
     util.show_error ('Error in procedure load_session_info', sqlerrm, true);
 end load_session_info;
 
@@ -871,49 +1047,41 @@ end load_session_info;
 procedure load_session_details (p_directory in varchar2 default 'GARMIN')
 is
 l_statement   varchar2 (200);
-l_prev_field  varchar2 (100) := '-1';
+l_prev_field  varchar2 (200) := '-1';
 l_id          integer (6)    := 0;
 l_user_id     gmn_devices.user_id%type;
 begin
   set_nls;
   garmin_pkg.remove_csv_files;
-    for ff in (select fn.file_name, extract_filename (fn.file_name) short_fn, gf.id fit_id, user_id from table (get_file_name (directory_path (p_directory), 'fit')) fn, gmn_fit_files gf
-	           where (instr (fn.file_name, g_windows_slash, 1, 4) = 0 and instr (fn.file_name, g_linux_slash, 1, 4) = 0)
+    for ff in (select fn.file_name, change_extention (extract_filename (fn.file_name), 'csv') csv_file, gf.id fit_id, user_id from table (get_file_name (directory_path (p_directory), 'fit')) fn, gmn_fit_files gf
+	           where instr (fn.file_name, slash, 1, 4) = 0
                  and extract_filename (fn.file_name) = gf.file_name and gf.track is null)
     loop
         garmin_pkg.convert_fit_file_to_csv (ff.file_name, 'FitToCSV.bat');
-		garmin_pkg.parse_csv_by_field_name (change_extention (ff.short_fn, 'csv'), ff.fit_id, p_directory);
+		garmin_pkg.parse_csv_by_field_name (ff.csv_file, p_directory);
 		select user_id into l_user_id from gmn_devices where serial# = (select max(val) from gmn_csv_by_field_name where field =  'serial_number');
         l_id := 1;
-        for j in (select gc.id, tc.column_name, gc.field, gc.val, gc.unit, tc.data_type
+		
+        for j in (select gc.line_number, tc.column_name, gc.field, gc.val, gc.unit, tc.data_type
                   from gmn_csv_by_field_name gc, user_tab_columns tc
                   where tc.table_name = 'GMN_FIT_DATA' and upper (gc.field) = tc.column_name
-                  order by gc.id)
+                  order by gc.line_number, gc.column_position)
         loop
           begin 
           if j.field = 'timestamp' and j.field != l_prev_field
           then
             l_id :=l_id + 1;
-	        insert into gmn_fit_data (fit_id, id, person_id, "TIMESTAMP")  values (ff.fit_id, l_id, l_user_id, garmin_pkg.date_offset_to_date (j.val));  
-          elsif    j.unit      = 'semicircles'
-		  then l_statement := 'update gmn_fit_data set ' || j.column_name || '='||  garmin_pkg.semicircles_to_lon_lat (j.val) || 
-                                                                ' where fit_id = ' || ff.fit_id || ' and id = ' || l_id || ' and person_id =' || l_user_id;
-				execute immediate l_statement;
-          elsif j.data_type = 'NUMBER'
-		  then l_statement := 'update gmn_fit_data set ' || j.column_name || '='|| to_char (j.val) || 
-                                                                ' where fit_id = ' || ff.fit_id || ' and id = ' || l_id || ' and person_id =' || l_user_id;
-			    execute immediate l_statement;
-          elsif j.data_type = 'DATE'
-		  then  l_statement := 'update gmn_fit_data set ' || j.column_name || '='''|| garmin_pkg.date_offset_to_date (j.val) || 
-                                                                ''' where fit_id = ' || ff.fit_id || ' and id = ' || l_id || ' and person_id =' || l_user_id;
-				execute immediate l_statement;
-          else l_statement := 'update gmn_fit_data set ' || j.column_name || '='''|| to_char (j.val) || 
-                             ''' where fit_id = ' || ff.fit_id || ' and id = ' || l_id || ' and person_id =' || l_user_id;
-			   execute immediate l_statement;
-          end if;  
-
-		update gmn_fit_files set track = 1, user_id = l_user_id where id = ff.fit_id;
-		commit;
+	        insert into gmn_fit_data (fit_id, id, person_id, "TIMESTAMP")  values (ff.fit_id, l_id, l_user_id, garmin_pkg.date_offset_to_date (j.val)); 
+          else
+		    l_statement := 'update gmn_fit_data set ' || j.column_name || '=' ||
+		    case 
+		      when j.unit      = 'semicircles' then ' garmin_pkg.semicircles_to_lon_lat (' || j.val || ')'
+		      when j.data_type = 'NUMBER'      then to_char (j.val)
+		      when j.data_type = 'DATE'        then ' garmin_pkg.date_offset_to_date (' || j.val || ')'
+			  else '''' || j.val || ''''
+		    end || ' where fit_id = ' || ff.fit_id || ' and id = ' || l_id || ' and person_id =' || l_user_id;
+		  execute immediate l_statement;
+        end if;  
 		
 	  exception when others
 	  then
@@ -922,6 +1090,8 @@ begin
 	  end;
 	  l_prev_field := j.field;
 	  end loop;
+	  update gmn_fit_files set track = 1, user_id = l_user_id where id = ff.fit_id;
+	  commit;
   end loop;
   delete gmn_fit_data where timestamp < to_date ('2000/01/01', 'YYYY/MM/DD');
   commit;
@@ -1164,7 +1334,6 @@ l_dest_offset integer;
 l_src_offset  integer;
 begin
   for j in (select substr (file_name, 16) my_file from table (get_file_name (directory_path (p_directory), 'json')))
-         --   where (substr (file_name, 16), p_person_id) not in (select name, person_id from gmn_json_data))
   loop
 --    if j.my_file like '%heartRateZones%' or j.my_file like '%sleepData%' or j.my_file like '%gear%'  or j.my_file like '%personalRecord%' or j.my_file like  '%userBioMetricProfileData%' or j.my_file like '%user_profile%' or 
 --       j.my_file like  '%UDSFile%' or j.my_file like  '%user_settings%' or j.my_file like  '%courses%' or j.my_file like  '%Predictions%' 
@@ -1190,6 +1359,162 @@ begin
 exception when others then 
    util.show_error ('Error in procedure load_json_files for person_id: ' || p_person_id, sqlerrm);
 end load_json_files;
+
+/******************************************************************************************************************************************************************/
+
+--
+-- Copy json data to tables
+--
+procedure evaluate_json_data
+is
+begin
+insert into gmn_hydration
+  ( uuid, person_id, version, vigorousintensityminutes, wellnessactivekilocalories, wellnessdistancemeters, wellnessendtimegmt                                          
+  , wellnessendtimelocal, wellnesskilocalories, wellnessstarttimegmt, wellnessstarttimelocal, wellnesstotalkilocalories                          
+  , calendardate, goalinml, lastentrytimestamplocal, sweatlossinml, valueinml, maxheartrate, minavgheartrate                                                   
+  , minheartrate, moderateintensityminutes, remainingkilocalories, avgwakingrespirationvalue, highestrespirationvalue                    
+  , latestrespirationtimegmt, latestrespirationvalue, lowestrespirationvalue, restingcaloriesfromactivity, restingheartrate                                                
+  , restingheartratetimestamp, totaldistancemeters, totalkilocalories, totalsteps, userintensityminutesgoal)
+select uuid, person_id, version, vigorousintensityminutes, wellnessactivekilocalories, wellnessdistancemeters, date_test(wellnessendtimegmt) wellnessendtimegmt
+  , date_test(wellnessendtimelocal) wellnessendtimelocal, wellnesskilocalories, date_test(wellnessstarttimegmt) wellnessstarttimegmt,
+  date_test(wellnessstarttimelocal) wellnessstarttimelocal, wellnesstotalkilocalories
+  , to_date(respiration_calendardate, 'YYYY-MM-DD'), hydration_goalinml, date_test(hydration_lastentrytimestamplocal) hydration_lastentrytimestamplocal, 
+  hydration_sweatlossinml, hydration_valueinml, maxheartrate, minavgheartrate            
+  , minheartrate, moderateintensityminutes, remainingkilocalories, respiration_avgwakingrespirationvalue, respiration_highestrespirationvalue
+  , date_test(respiration_latestrespirationtimegmt) respiration_latestrespirationtimegmt, respiration_latestrespirationvalue, respiration_lowestrespirationvalue, restingcaloriesfromactivity, restingheartrate                           
+  , restingheartratetimestamp, totaldistancemeters, totalkilocalories, totalsteps, userintensityminutesgoal
+from v_gmn_json_hydration
+where uuid not in (select uuid from gmn_hydration);
+
+update gmn_json_data set view_name =  'v_gmn_json_hydration'  where name like  '%UDSFile%' and view_name is null;
+commit;
+
+insert into gmn_biometic_profile (activity_class, threshold_power, height, vo2_max, vo2_max_cycling, weight, person_id)
+select activityclass, functionalthresholdpower, height, vo2max, vo2maxcycling, weight, person_id from v_gmn_json_biometrics_profile
+where (activityclass, functionalthresholdpower, height, vo2max, vo2maxcycling, weight, person_id)
+not in (select activity_class, threshold_power, height, vo2_max, vo2_max_cycling, weight, person_id from gmn_biometic_profile);
+
+update gmn_json_data set view_name =  'v_gmn_json_biometrics_profile'  where name like  '%userBioMetricProfileData%' and view_name is null;
+commit;
+
+insert into gmn_courses (courseName, courseType, createDate, elevationGain, elevationLoss, startpoint_elevation, startpoint_latitude, startpoint_longitude, update_date, person_id)
+select  coursename,coursetype, to_date (substr(createdate,1, 10)|| substr (createdate, 12, 8), 'YYYY-MM-DDHH24:Mi:SS'), elevationgainmeter,
+        elevationlossmeter, startpoint_elevation, startpoint_latitude, startpoint_longitude, 
+        to_date (substr(updatedate,1, 10)|| substr (updatedate, 12, 8), 'yyyy-mm-ddhh24:mi:ss'), person_id
+from v_gmn_json_courses
+where courseName is not null
+and (coursename,person_id) not in (select coursename,person_id from v_gmn_json_courses  group by coursename,person_id);
+
+update gmn_json_data set view_name =  'v_gmn_json_courses'  where name like  '%courses%' and view_name is null;
+commit;
+
+insert into gmn_gear (gear_id, create_date, model, begin_date, display_name, status, max_meters, notified, updated, person_id)
+select gearpk, to_date (createdate, 'YYYY-MM-DD'), custommakemodel, to_date (datebegin, 'YYYY-MM-DD'), displayname, gearstatusname,
+ maximummeters, notified, to_date(updatedate, 'YYYY-MM-DD'), person_id
+from v_gmn_json_gear
+where (person_id, gearpk) not in (select person_id, gear_id from gmn_gear);
+
+update gmn_json_data set view_name =  'v_gmn_json_gear'  where name like  '%gear%' and view_name is null;
+commit;
+
+insert into gmn_heartrate_zones (person_id, sport, trainingmethod, zone1, zone2, zone3, zone4, zone5, loaded)        
+select distinct person_id, sport, trainingmethod, zone1floor, zone2floor, zone3floor, zone4floor, zone5floor, loaded from v_gmn_json_heartrate_zones
+where (person_id, sport, trainingmethod, loaded) not in (select person_id, sport, trainingmethod, loaded from gmn_heartrate_zones);
+
+update gmn_json_data set view_name =  'v_gmn_json_heartrate_zones'  where name like  '%heartRateZones%' and view_name is null;
+
+insert into gmn_personal_records (person_id, record_type, confirmed, current_v, created, value)
+select distinct person_id, personalrecordtype, confirmed, current_v, to_date(createddate, 'YYYY-MM-DD'), value from  v_gmn_json_personal_records
+where personalrecordtype is not null
+and (person_id, personalRecordType, current_v, value) not in (select person_id, record_type, current_v, value from gmn_personal_records);
+
+update gmn_json_data set view_name =  'v_gmn_json_personal_records'  where name like  '%personalRecord%' and view_name is null;
+commit;
+
+insert into gmn_runrace_predictions (person_id, cal_date, racetime_5k, racetime_10k, half_marathon, marathon)
+select person_id, to_date (calendardate, 'YYYY-MM-DD'), min(racetime5k), min(racetime10k), min(racetimehalf), min(racetimemarathon)
+from v_gmn_json_runrace_predictions
+where (person_id, to_date (calendardate, 'YYYY-MM-DD')) not in (select person_id, cal_date from gmn_runrace_predictions)
+group by person_id, to_date (calendardate, 'YYYY-MM-DD');
+
+update gmn_json_data set view_name =  'v_gmn_json_runrace_predictions'  where name like '%RunRacePredictions%' and view_name is null;
+commit;
+
+insert into gmn_user_profile( person_id, birthdate, email, first_name, last_name, gender, username)
+select person_id, to_date(birthdate, 'YYYY-MM-DD'), emailaddress, firstname,lastname, gender,username from v_gmn_json_user_profile
+where person_id not in (select person_id from gmn_user_profile);
+
+update gmn_json_data set view_name =  'v_gmn_json_user_profile'  where name like  '%user_profile%' and view_name is null;
+commit;
+
+insert into gmn_user_settings (person_id, handedness, locale, loaded)
+select person_id, handedness, preferredlocale, loaded from v_gmn_json_user_settings
+where (person_id, loaded) not in (select person_id, loaded from gmn_user_settings);
+
+update gmn_json_data set view_name =  'v_gmn_json_user_settings'  where name like  '%user_settings%' and view_name is null;
+commit;
+
+insert into gmn_sleep_data 
+( avg_respiration, avgsleepstress, awakecount, awakesleepseconds, calendardate, deepsleepseconds, highestrespiration, lightsleepseconds           
+, lowestrespiration, remsleepseconds, restlessmomentcount, sleep_end_gmt, awaketimescore, awakeningscountscore, combinedawakescore          
+, deepscore, durationscore, feedback, insight, interruptionsscore, lightscore, overallscore, qualityscore, recoveryscore, remscore                    
+, restfulnessscore, sleepstarttimestampgmt, sleepwindowconfirmationtype, unmeasurableseconds, cal_date, sleep_end, sleep_start, person_id)
+select averagerespiration, avgsleepstress, awakecount, awakesleepseconds, to_date(calendardate, 'YYYY-MM-DD'), deepsleepseconds, highestrespiration, lightsleepseconds,
+lowestrespiration, remsleepseconds, restlessmomentcount,
+ to_date (substr (sleependtimestampgmt, 1, 10) || substr (sleependtimestampgmt, 12, 8), 'YYYY-MM-DDHH24:MI:SS'),
+ sleepscores_awaketimescore, sleepscores_awakeningscountscore,
+sleepscores_combinedawakescore, sleepscores_deepscore, sleepscores_durationscore, sleepscores_feedback, sleepscores_insight,
+sleepscores_interruptionsscore, sleepscores_lightscore, sleepscores_overallscore, sleepscores_qualityscore, sleepscores_recoveryscore,
+sleepscores_remscore, sleepscores_restfulnessscore, sleepstarttimestampgmt, sleepwindowconfirmationtype, unmeasurableseconds,
+cal_date, sleep_end, sleep_start, person_id from v_gmn_json_sleep_data
+where (person_id, cal_date) not in (select person_id, cal_date from gmn_sleep_data);  
+
+update gmn_json_data set view_name =  'v_gmn_json_sleep_data'  where name like  '%sleepData%' and view_name is null;  
+commit;
+
+for j in (select person_id, to_date (calendardate, 'YYYY-MM-DD') calendardate, deviceid, acuteload, acwrfactorfeedback, acwrfactorpercent, feedbacklong, feedbackshort, hrvfactorfeedback                                                    
+            , hrvfactorpercent, hrvweeklyaverage, ready_level, recoverytime, recoverytimefactorfeedback, recoverytimefactorpercent, score
+            , sleephistoryfactorfeedback, sleephistoryfactorpercent, sleepscore, sleepscorefactorfeedback, sleepscorefactorpercent
+            , stresshistoryfactorfeedback, stresshistoryfactorpercent, validsleep
+            from v_gmn_json_training_readyness
+            where (person_id, to_date (calendardate, 'YYYY-MM-DD')) not in (select person_id, calendardate from gmn_training_readyness))
+loop 
+  begin
+    insert into gmn_training_readyness
+     ( person_id, calendardate, device_id, acuteload, acwrfactorfeedback, acwrfactorpercent, feedbacklong, feedbackshort, hrvfactorfeedback                                               
+     , hrvfactorpercent, hrvweeklyaverage, ready_level, recoverytime, recoverytimefactorfeedback, recoverytimefactorpercent, score
+     , sleephistoryfactorfeedback, sleephistoryfactorpercent, sleepscore, sleepscorefactorfeedback, sleepscorefactorpercent
+     , stresshistoryfactorfeedback, stresshistoryfactorpercent, validsleep)
+    values 
+     ( j.person_id, j.calendardate, j.deviceid, j.acuteload, j.acwrfactorfeedback, j.acwrfactorpercent, j.feedbacklong, j.feedbackshort, j.hrvfactorfeedback                                               
+     , j.hrvfactorpercent, j.hrvweeklyaverage, j.ready_level, j.recoverytime, j.recoverytimefactorfeedback, j.recoverytimefactorpercent, j.score
+     , j.sleephistoryfactorfeedback, j.sleephistoryfactorpercent, j.sleepscore, j.sleepscorefactorfeedback, j.sleepscorefactorpercent
+     , j.stresshistoryfactorfeedback, j.stresshistoryfactorpercent, j.validsleep);
+  
+  exception when dup_val_on_index 
+  then null;
+  end;
+end loop;
+
+update gmn_json_data set view_name =  'v_gmn_json_training_readyness'  where name like '%TrainingReadinessDTO%' and view_name is null;
+commit;
+
+update gmn_json_data set view_name =  'v_gmn_json_TrainingHistory'  where name like 'TrainingHistory%.json' and view_name is null;
+update gmn_json_data set view_name =  'v_gmn_json_metrics_metadata'  where name like 'MetricsMaxMetData_%.json' and view_name is null;
+update gmn_json_data set view_name =  'v_gmn_json_AbnormalHrEvents'  where name like '%AbnormalHrEvents.json' and view_name is null;
+update gmn_json_data set view_name =  'v_gmn_json_EnduranceScore'  where name like 'EnduranceScore_%.json' and view_name is null;
+update gmn_json_data set view_name =  'v_gmn_json_fitnessAgeData'  where name like '%fitnessAgeData.json' and view_name is null;
+update gmn_json_data set view_name =  'v_gmn_json_HillScore'  where name like 'HillScore%.json' and view_name is null;
+update gmn_json_data set view_name =  'v_gmn_json_HeatAltitudeAcclimation'  where name like 'MetricsHeatAltitudeAcclimation%.json' and view_name is null;
+update gmn_json_data set view_name =  'v_gmn_json_TrainingHistory'  where name like 'TrainingHistory%.json' and view_name is null;
+update gmn_json_data set view_name =  'v_gmn_json_CalendarItems'  where name like 'CalendarItems.json' and view_name is null;
+update gmn_json_data set view_name =  'v_gmn_json_events'  where name like 'events.json' and view_name is null;
+update gmn_json_data set view_name =  'v_gmn_json_customer'  where name like 'customer.json' and view_name is null;
+commit;
+
+exception when others then 
+   util.show_error ('Error in procedure evaluate_json_data', sqlerrm);
+end evaluate_json_data;
 
 /******************************************************************************************************************************************************************/
 
