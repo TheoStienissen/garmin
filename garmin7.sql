@@ -134,6 +134,7 @@ create or replace directory fit_celeste as 'C:\Work\garmin\fit_celeste';
 
 create table gmn_session_info (
 fit_id                           integer,
+person_id                        number (4),
 avg_heart_rate                   number (3),
 max_heart_rate                   number (3),
 enhanced_avg_speed               number (5, 2),
@@ -189,12 +190,12 @@ end gmn_session_info_bri;
 
 alter table gmn_session_info add constraint gmn_session_info_pk  primary key (fit_id);
 alter table gmn_session_info add constraint gmn_session_info_fk1 foreign key (fit_id) references gmn_fit_files (id) on delete set null;
+alter table gmn_session_info add constraint gmn_session_info_fk2 foreign key (person_id) references gmn_users (id) on delete cascade;
 
 -- 5. Create a table with all the attribute fields that we are interested in
 create table gmn_fit_data
 ( fit_id               number (6)
 , id                   number (10)
-, person_id            number (4)
 , avg_heart_rate       number (3)
 , avg_power            number (3)
 , max_power            number (3)
@@ -239,9 +240,10 @@ create table gmn_fit_data
  partition by list (fit_id) automatic
 (partition p_1 values (1));
 
+alter table gmn_fit_data add constraint gmn_fit_data_pk  primary key (fit_id, id);
 
-alter table gmn_fit_data add constraint gmn_fit_data_pk  primary key (fit_id, id, person_id);
-alter table gmn_fit_data add constraint gmn_fit_data_fk1 foreign key (person_id) references gmn_users (id);
+
+-- alter table gmn_fit_data add constraint gmn_fit_data_fk1 foreign key (person_id) references gmn_users (id);
 
 create table gmn_json_data
 ( id          integer generated always as identity
@@ -541,8 +543,8 @@ is
 begin
   l_bfile := bfilename (p_dir, p_filename);
   dbms_lob.fileopen (l_bfile, dbms_lob.file_readonly);
-  dbms_lob.createtemporary(l_blob, false);
-  if dbms_lob.getlength(l_bfile) > 0 then
+  dbms_lob.createtemporary (l_blob, false);
+  if dbms_lob.getlength (l_bfile) > 0 then
     dbms_lob.loadblobfromfile (
       dest_lob    => l_blob,
       src_bfile   => l_bfile,
@@ -550,7 +552,7 @@ begin
       dest_offset => l_dest_offset,
       src_offset  => l_src_offset);
   end if;
-  dbms_lob.fileclose(l_bfile);
+  dbms_lob.fileclose (l_bfile);
   return l_blob;
   
 exception when others then
@@ -688,7 +690,7 @@ end seconds_to_ds_interval;
 /******************************************************************************************************************************************************************/
 
 --
--- Number of seconds that have past since the 31-st of Dec 1989. Correction for dst is still required?
+-- Number of seconds that have past since the 31-st of Dec 1989. Is correction for dst is still required?
 --
 function date_offset_to_date (p_offset in integer) return date
 is
@@ -725,7 +727,7 @@ is
 begin
   insert into gmn_fit_files (file_name)
       select garmin_pkg.extract_filename (file_name) from table (get_file_name (garmin_pkg.directory_path (p_directory), 'fit'))
-	   where (instr(file_name, slash, 1, 4) = 0)
+	   where (instr (file_name, slash, 1, 4) = 0)
 	     and  garmin_pkg.extract_filename (file_name) not in (select file_name from gmn_fit_files) order by 1 desc;		
   commit;
 
@@ -1035,7 +1037,6 @@ begin
   end loop;
 
 exception when others then
-
     util.show_error ('Error in procedure load_session_info', sqlerrm, true);
 end load_session_info;
 
@@ -1048,7 +1049,7 @@ procedure load_session_details (p_directory in varchar2 default 'GARMIN')
 is
 l_statement   varchar2 (200);
 l_prev_field  varchar2 (200) := '-1';
-l_id          integer (6)    := 0;
+l_id          integer (6);
 l_user_id     gmn_devices.user_id%type;
 begin
   set_nls;
@@ -1059,7 +1060,7 @@ begin
     loop
         garmin_pkg.convert_fit_file_to_csv (ff.file_name, 'FitToCSV.bat');
 		garmin_pkg.parse_csv_by_field_name (ff.csv_file, p_directory);
-		select user_id into l_user_id from gmn_devices where serial# = (select max(val) from gmn_csv_by_field_name where field =  'serial_number');
+		select user_id into l_user_id from gmn_devices where serial# = (select max (val) from gmn_csv_by_field_name where field =  'serial_number');
         l_id := 1;
 		
         for j in (select gc.line_number, tc.column_name, gc.field, gc.val, gc.unit, tc.data_type
@@ -1071,7 +1072,7 @@ begin
           if j.field = 'timestamp' and j.field != l_prev_field
           then
             l_id :=l_id + 1;
-	        insert into gmn_fit_data (fit_id, id, person_id, "TIMESTAMP")  values (ff.fit_id, l_id, l_user_id, garmin_pkg.date_offset_to_date (j.val)); 
+	        insert into gmn_fit_data (fit_id, id, "TIMESTAMP")  values (ff.fit_id, l_id, garmin_pkg.date_offset_to_date (j.val)); 
           else
 		    l_statement := 'update gmn_fit_data set ' || j.column_name || '=' ||
 		    case 
@@ -1079,7 +1080,7 @@ begin
 		      when j.data_type = 'NUMBER'      then to_char (j.val)
 		      when j.data_type = 'DATE'        then ' garmin_pkg.date_offset_to_date (' || j.val || ')'
 			  else '''' || j.val || ''''
-		    end || ' where fit_id = ' || ff.fit_id || ' and id = ' || l_id || ' and person_id =' || l_user_id;
+		    end || ' where fit_id = ' || ff.fit_id || ' and id = ' || l_id;
 		  execute immediate l_statement;
         end if;  
 		
@@ -1091,9 +1092,9 @@ begin
 	  l_prev_field := j.field;
 	  end loop;
 	  update gmn_fit_files set track = 1, user_id = l_user_id where id = ff.fit_id;
-	  commit;
-  end loop;
-  delete gmn_fit_data where timestamp < to_date ('2000/01/01', 'YYYY/MM/DD');
+	  update gmn_session_info set person_id = l_user_id where fit_id = ff.fit_id;
+	  delete gmn_fit_data where fit_id = ff.fit_id and timestamp < to_date ('2000/01/01', 'YYYY/MM/DD');
+    end loop;
   commit;
 
 exception when others then 
