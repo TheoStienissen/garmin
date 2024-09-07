@@ -2,7 +2,7 @@ DOC
 
   Author      :  Theo Stienissen
   Date        :  October  2023
-  Last Change :  July     2024
+  Last Change :  August   2024
   Purpose     :  Analyze data from Garmin watch in an Oracle database
   Status      :  Production Acceptance
   Contact     :  theo.stienissen@gmail.com
@@ -27,10 +27,7 @@ Dependencies:
   7. select privilege on dba_directories
 
 ToDo:
-Drop the columns from gmn_users:
-, hr_low        number (3)    not null default 100
-, hr_medium     number (3)    not null default 120
-, hr_high       number (3)    not null default 140
+
 
 #
 
@@ -52,6 +49,17 @@ create or replace type int_row as object (exercise_date date,
   
 create or replace type int_tab as table of int_row;
 /
+
+create or replace type heartrate_zone_row as object
+(lap integer(3), avg_heart_rate number (3, 0), total_timer_time number (7, 2),
+  rest integer (6), low integer (6), medium integer (6), high integer (6),
+  ultra integer (6), extreme integer (6), unknown integer (6), total_distance number (7, 2), enhanced_avg_speed number (5, 2),
+  enhanced_max_speed number (5, 2), total_ascent number (6, 2), total_descent number (6, 2));
+/
+
+create or replace type heartrate_zone_tab as table of heartrate_zone_row;
+/
+
 
 -- drop table gmn_users;
 
@@ -180,8 +188,8 @@ loop
   if :new.local_timestamp is null
   then
     if :new.start_time between j.dst_start and j.dst_end
-    then :new.local_timestamp := :new.start_time + 2 / 24; -- Summertime 
-    else :new.local_timestamp := :new.start_time + 1 / 24; -- Wintertime 
+    then :new.local_timestamp := :new.start_time + 2 / 24; -- Summertime NL
+    else :new.local_timestamp := :new.start_time + 1 / 24; -- Wintertime NL
   end if;
   end if;
 end loop;
@@ -242,9 +250,6 @@ create table gmn_fit_data
 
 alter table gmn_fit_data add constraint gmn_fit_data_pk  primary key (fit_id, id);
 
-
--- alter table gmn_fit_data add constraint gmn_fit_data_fk1 foreign key (person_id) references gmn_users (id);
-
 create table gmn_json_data
 ( id          integer generated always as identity
 , person_id   number (6) not null
@@ -253,7 +258,6 @@ create table gmn_json_data
 , loaded      date default sysdate
 , view_name   varchar2 (50));
 
-alter table gmn_json_data add constraint test_json_ck1 check (json_doc is json);
 alter table gmn_json_data add constraint test_json_ck2 check (json_clob is json); 
 alter table gmn_json_data add constraint gmn_json_data_fk1 foreign key (person_id) references gmn_users (id) on delete cascade;
 
@@ -312,8 +316,8 @@ create or replace view v_gmn_session_info_step_length
 as
   select u.id person_id, u.nick_name, si.fit_id, si.sport_profile_name, si.avg_step_length, si.avg_heart_rate, si.max_heart_rate, si.start_time, si.total_distance, 
 si.total_elapsed_time, 3.6 * si.enhanced_avg_speed speed
-from gmn_session_info si, gmn_fit_files ff, gmn_users u
-where ff.id = si.fit_id and ff.user_id = u.id and si.avg_step_length is not null;
+from gmn_session_info si, gmn_users u
+where si.person_id = u.id and si.avg_step_length is not null;
 
 create table gmn_sport_profiles
 ( id                  integer generated always as identity
@@ -327,7 +331,6 @@ from gmn_session_info si
 join gmn_fit_files ff on (si.fit_id = ff.id)
 join gmn_users u on (u.id = ff.user_id)
 join gmn_sport_profiles sp on (sp.sport_profile_name = si.sport_profile_name);
-
 
 create global temporary table gmn_excel_output
 ( line_number  number (10),
@@ -381,7 +384,7 @@ set serveroutput on size unlimited
 
 create or replace package garmin_pkg
 is
-g_max_int        constant integer     := power (2, 31);
+g_max_int constant integer := power (2, 31);
 
 function  slash return varchar2;
 
@@ -426,6 +429,8 @@ procedure load_session_details (p_directory in varchar2 default 'GARMIN');
 procedure remove_csv_files (p_directory in varchar2 default 'GARMIN');
 
 function  get_heartrate (p_person_id in integer, p_range in integer) return integer;
+
+function  heartrate_distribution (p_fit_id integer) return heartrate_zone_tab pipelined;
 
 function  fit_data_loaded (p_fit_id in integer) return integer;
 
@@ -534,7 +539,7 @@ end set_nls;
 --
 -- Load a file from disk and return it as a blob
 --
-function  file_to_blob (p_dir in varchar2, p_filename in varchar2) return blob
+function file_to_blob (p_dir in varchar2, p_filename in varchar2) return blob
 is
   l_bfile  bfile;
   l_blob   blob;
@@ -567,7 +572,8 @@ end file_to_blob;
 function ds_to_varchar2 (p_ds in interval day to second) return varchar2
 is 
 begin 
-  return lpad (extract (day from p_ds ) , 2, '0') || ' ' || lpad (extract (hour from p_ds), 2, '0') || ':' || lpad (extract (minute from p_ds), 2, '0')  || ':' || lpad (extract (second from p_ds), 2, '0');
+--  return lpad (extract (day from p_ds ) , 2, '0') || ' ' || lpad (extract (hour from p_ds), 2, '0') || ':' || lpad (extract (minute from p_ds), 2, '0')  || ':' || lpad (extract (second from p_ds), 2, '0');
+  return regexp_substr(p_ds, '\d{2}:\d{2}:\d{2}.\d{3}');
 
 exception when others then
   util.show_error ('Error in function ds_to_varchar2', sqlerrm);
@@ -1259,6 +1265,39 @@ end analyze_data;
 --
 -- Analytics function
 --
+function  heartrate_distribution (p_fit_id integer) return heartrate_zone_tab pipelined
+is
+type array_ty is varray (7) of integer;
+l_array array_ty := array_ty ();
+begin    
+for j in (select rownum as lap, gf.id, lead (gf.id, 1, 1e6) over (order by gf.id) next_id, avg_heart_rate, total_distance,
+             round (3.6 * enhanced_avg_speed, 2) enhanced_avg_speed, total_timer_time,
+             round (3.6 * enhanced_max_speed, 2) enhanced_max_speed, total_ascent, total_descent
+           from gmn_fit_data gf
+                               where gf.fit_id = p_fit_id and start_position_lat is not null and total_training_effect is null)
+loop
+  l_array.delete;
+  for s in (select rownum as pos, round (hr.column_value) seconds from gmn_fit_data gf2
+       join table (apex_string.split (gf2.time_in_hr_zone,'|')) hr on 1 = 1
+       where gf2.fit_id= p_fit_id and gf2.id between j.id and j.next_id and time_in_hr_zone is not null)
+  loop
+    dbms_output.put_line('L: ' || j.lap || '. P: ' || s.pos || '. S: ' || s.seconds);
+              l_array.extend;
+    l_array (s.pos) := s.seconds;
+  end loop;
+  pipe row (heartrate_zone_row (j.lap, j.avg_heart_rate, j.total_timer_time, l_array (1), l_array (2), l_array (3), l_array (4), l_array (5), l_array (6), l_array (7),
+            j.total_distance, j.enhanced_avg_speed, j.enhanced_max_speed, j.total_ascent, j.total_descent)); 
+end loop;
+
+exception when others then 
+   util.show_error ('Error in function heartrate_distribution for Fit ID: ' || p_fit_id, sqlerrm);
+end heartrate_distribution;
+
+/******************************************************************************************************************************************************************/
+
+--
+-- Analytics function
+--
 function analyze_graph (p_person_id in integer, p_field in integer, p_sport_profile in varchar2, p_measurements in integer default 20) return int_tab pipelined
 is 
 type cell_ty       is record (cell number (10, 2));
@@ -1336,24 +1375,20 @@ l_src_offset  integer;
 begin
   for j in (select substr (file_name, 16) my_file from table (get_file_name (directory_path (p_directory), 'json')))
   loop
---    if j.my_file like '%heartRateZones%' or j.my_file like '%sleepData%' or j.my_file like '%gear%'  or j.my_file like '%personalRecord%' or j.my_file like  '%userBioMetricProfileData%' or j.my_file like '%user_profile%' or 
---       j.my_file like  '%UDSFile%' or j.my_file like  '%user_settings%' or j.my_file like  '%courses%' or j.my_file like  '%Predictions%' 
---   then
-	  l_dest_offset := 1;
-      l_src_offset  := 1;
-      l_bfile := bfilename (p_directory, j.my_file);
-      dbms_lob.fileopen (l_bfile, dbms_lob.file_readonly);
-      dbms_lob.createtemporary (l_blob, true);
-      dbms_lob.open (l_blob, dbms_lob.lob_readwrite);
-      dbms_lob.loadblobfromfile (
-        dest_lob    => l_blob,
-        src_bfile   => l_bfile,
-        amount      => dbms_lob.lobmaxsize,
-        dest_offset => l_dest_offset,
-        src_offset  => l_src_offset);
-      dbms_lob.fileclose (l_bfile);
-      insert into gmn_json_data (name, person_id, json_clob) values (j.my_file, p_person_id, to_clob (l_blob));
---	end if;
+	l_dest_offset := 1;
+    l_src_offset  := 1;
+    l_bfile := bfilename (p_directory, j.my_file);
+    dbms_lob.fileopen (l_bfile, dbms_lob.file_readonly);
+    dbms_lob.createtemporary (l_blob, true);
+    dbms_lob.open (l_blob, dbms_lob.lob_readwrite);
+    dbms_lob.loadblobfromfile (
+      dest_lob    => l_blob,
+      src_bfile   => l_bfile,
+      amount      => dbms_lob.lobmaxsize,
+      dest_offset => l_dest_offset,
+      src_offset  => l_src_offset);
+    dbms_lob.fileclose (l_bfile);
+    insert into gmn_json_data (name, person_id, json_clob) values (j.my_file, p_person_id, to_clob (l_blob));
   end loop;
   commit;
 
@@ -1376,13 +1411,13 @@ insert into gmn_hydration
   , minheartrate, moderateintensityminutes, remainingkilocalories, avgwakingrespirationvalue, highestrespirationvalue                    
   , latestrespirationtimegmt, latestrespirationvalue, lowestrespirationvalue, restingcaloriesfromactivity, restingheartrate                                                
   , restingheartratetimestamp, totaldistancemeters, totalkilocalories, totalsteps, userintensityminutesgoal)
-select uuid, person_id, version, vigorousintensityminutes, wellnessactivekilocalories, wellnessdistancemeters, date_test(wellnessendtimegmt) wellnessendtimegmt
-  , date_test(wellnessendtimelocal) wellnessendtimelocal, wellnesskilocalories, date_test(wellnessstarttimegmt) wellnessstarttimegmt,
+select uuid, person_id, version, vigorousintensityminutes, wellnessactivekilocalories, wellnessdistancemeters, date_test (wellnessendtimegmt) wellnessendtimegmt
+  , date_test (wellnessendtimelocal) wellnessendtimelocal, wellnesskilocalories, date_test(wellnessstarttimegmt) wellnessstarttimegmt,
   date_test(wellnessstarttimelocal) wellnessstarttimelocal, wellnesstotalkilocalories
-  , to_date(respiration_calendardate, 'YYYY-MM-DD'), hydration_goalinml, date_test(hydration_lastentrytimestamplocal) hydration_lastentrytimestamplocal, 
+  , to_date (respiration_calendardate, 'YYYY-MM-DD'), hydration_goalinml, date_test(hydration_lastentrytimestamplocal) hydration_lastentrytimestamplocal, 
   hydration_sweatlossinml, hydration_valueinml, maxheartrate, minavgheartrate            
   , minheartrate, moderateintensityminutes, remainingkilocalories, respiration_avgwakingrespirationvalue, respiration_highestrespirationvalue
-  , date_test(respiration_latestrespirationtimegmt) respiration_latestrespirationtimegmt, respiration_latestrespirationvalue, respiration_lowestrespirationvalue, restingcaloriesfromactivity, restingheartrate                           
+  , date_test (respiration_latestrespirationtimegmt) respiration_latestrespirationtimegmt, respiration_latestrespirationvalue, respiration_lowestrespirationvalue, restingcaloriesfromactivity, restingheartrate                           
   , restingheartratetimestamp, totaldistancemeters, totalkilocalories, totalsteps, userintensityminutesgoal
 from v_gmn_json_hydration
 where uuid not in (select uuid from gmn_hydration);
@@ -1406,12 +1441,12 @@ from v_gmn_json_courses
 where courseName is not null
 and (coursename,person_id) not in (select coursename,person_id from v_gmn_json_courses  group by coursename,person_id);
 
-update gmn_json_data set view_name =  'v_gmn_json_courses'  where name like  '%courses%' and view_name is null;
+update gmn_json_data set view_name =  'v_gmn_json_courses'  where name like '%courses%' and view_name is null;
 commit;
 
 insert into gmn_gear (gear_id, create_date, model, begin_date, display_name, status, max_meters, notified, updated, person_id)
 select gearpk, to_date (createdate, 'YYYY-MM-DD'), custommakemodel, to_date (datebegin, 'YYYY-MM-DD'), displayname, gearstatusname,
- maximummeters, notified, to_date(updatedate, 'YYYY-MM-DD'), person_id
+ maximummeters, notified, to_date (updatedate, 'YYYY-MM-DD'), person_id
 from v_gmn_json_gear
 where (person_id, gearpk) not in (select person_id, gear_id from gmn_gear);
 
@@ -1425,7 +1460,7 @@ where (person_id, sport, trainingmethod, loaded) not in (select person_id, sport
 update gmn_json_data set view_name =  'v_gmn_json_heartrate_zones'  where name like  '%heartRateZones%' and view_name is null;
 
 insert into gmn_personal_records (person_id, record_type, confirmed, current_v, created, value)
-select distinct person_id, personalrecordtype, confirmed, current_v, to_date(createddate, 'YYYY-MM-DD'), value from  v_gmn_json_personal_records
+select distinct person_id, personalrecordtype, confirmed, current_v, to_date (createddate, 'YYYY-MM-DD'), value from  v_gmn_json_personal_records
 where personalrecordtype is not null
 and (person_id, personalRecordType, current_v, value) not in (select person_id, record_type, current_v, value from gmn_personal_records);
 
@@ -1433,7 +1468,7 @@ update gmn_json_data set view_name =  'v_gmn_json_personal_records'  where name 
 commit;
 
 insert into gmn_runrace_predictions (person_id, cal_date, racetime_5k, racetime_10k, half_marathon, marathon)
-select person_id, to_date (calendardate, 'YYYY-MM-DD'), min(racetime5k), min(racetime10k), min(racetimehalf), min(racetimemarathon)
+select person_id, to_date (calendardate, 'YYYY-MM-DD'), min (racetime5k), min (racetime10k), min (racetimehalf), min (racetimemarathon)
 from v_gmn_json_runrace_predictions
 where (person_id, to_date (calendardate, 'YYYY-MM-DD')) not in (select person_id, cal_date from gmn_runrace_predictions)
 group by person_id, to_date (calendardate, 'YYYY-MM-DD');
@@ -1442,7 +1477,7 @@ update gmn_json_data set view_name =  'v_gmn_json_runrace_predictions'  where na
 commit;
 
 insert into gmn_user_profile( person_id, birthdate, email, first_name, last_name, gender, username)
-select person_id, to_date(birthdate, 'YYYY-MM-DD'), emailaddress, firstname,lastname, gender,username from v_gmn_json_user_profile
+select person_id, to_date (birthdate, 'YYYY-MM-DD'), emailaddress, firstname,lastname, gender,username from v_gmn_json_user_profile
 where person_id not in (select person_id from gmn_user_profile);
 
 update gmn_json_data set view_name =  'v_gmn_json_user_profile'  where name like  '%user_profile%' and view_name is null;
@@ -1460,7 +1495,7 @@ insert into gmn_sleep_data
 , lowestrespiration, remsleepseconds, restlessmomentcount, sleep_end_gmt, awaketimescore, awakeningscountscore, combinedawakescore          
 , deepscore, durationscore, feedback, insight, interruptionsscore, lightscore, overallscore, qualityscore, recoveryscore, remscore                    
 , restfulnessscore, sleepstarttimestampgmt, sleepwindowconfirmationtype, unmeasurableseconds, cal_date, sleep_end, sleep_start, person_id)
-select averagerespiration, avgsleepstress, awakecount, awakesleepseconds, to_date(calendardate, 'YYYY-MM-DD'), deepsleepseconds, highestrespiration, lightsleepseconds,
+select averagerespiration, avgsleepstress, awakecount, awakesleepseconds, to_date (calendardate, 'YYYY-MM-DD'), deepsleepseconds, highestrespiration, lightsleepseconds,
 lowestrespiration, remsleepseconds, restlessmomentcount,
  to_date (substr (sleependtimestampgmt, 1, 10) || substr (sleependtimestampgmt, 12, 8), 'YYYY-MM-DDHH24:MI:SS'),
  sleepscores_awaketimescore, sleepscores_awakeningscountscore,
