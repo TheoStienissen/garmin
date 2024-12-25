@@ -27,6 +27,8 @@ Dependencies:
   7. select privilege on dba_directories
 
 ToDo:
+  54 Date fields
+  Page sleepscore
 
 
 #
@@ -75,7 +77,11 @@ create table gmn_users
 , longitude     number -- Home location
 , lattitude     number
 , avatar        blob          not null      
-, fit_directory varchar2 (10));
+, fit_directory varchar2 (10)
+, date_of_birth date
+, weight        number (4, 1)
+, height        number (3,0)
+, vo2_max       number (2));
 
 insert into gmn_users (first_name, last_name, nick_name) values ('Theo'   , 'Stienissen', 'Theo');
 insert into gmn_users (first_name, last_name, nick_name) values ('Dolly'  , 'Stienissen', 'Dolly');
@@ -98,7 +104,7 @@ insert into gmn_devices (user_id, description, serial#) values (1, 'Garmin watch
 insert into gmn_devices (user_id, description, serial#) values (2, 'Garmin watch Dolly', 3446481735);
 
 create table gmn_fit_routines
-( id      integer generated always as identity
+( id      integer  generated always as identity
 , path    varchar2 (100)
 , routine varchar2 (50)
 , version varchar2 (20));
@@ -226,19 +232,19 @@ create table gmn_fit_data
 , total_training_effect number (2, 1)
 , total_work           number (7)
 , enhanced_respiration_rate number(4,2)
-, threshold_heart_rate number(3,0)
-, enhanced_altitude	   number(6,2)    
-, total_timer_time	   number(8,3)
+, threshold_heart_rate number (3,0)
+, enhanced_altitude	   number (6,2)    
+, total_timer_time	   number (8,3)
 , end_position_lat	   number
 , end_position_long	   number
-, total_calories	   number(5,0)  
-, total_elapsed_time   number(8,3) 
-, enhanced_max_speed   number(5,3)
+, total_calories	   number (5,0)  
+, total_elapsed_time   number (8,3) 
+, enhanced_max_speed   number( 5,3)
 , name	               varchar2 (150)
-, total_ascent     	   number(5,1)  
-, total_descent	       number(5,1) 
-, enhanced_max_altitude number(6,2)             
-, num_laps	           number(3,0)
+, total_ascent     	   number (5,1)  
+, total_descent	       number (5,1) 
+, enhanced_max_altitude number (6,2)             
+, num_laps	           number (3,0)
 , cadence              number (3)
 , time_in_hr_zone      varchar2 (100)
 , avg_cadence          number (3)
@@ -406,6 +412,8 @@ function  to_ds (p_string in varchar2, p_col in varchar2 default null) return in
 
 function  to_dt (p_string in varchar2, p_col in varchar2 default null) return date;
 
+function  extended_to_date (p_string in varchar2) return date;
+
 function  interval_ds_to_seconds (p_interval in interval day to second) return integer;
 
 function  seconds_to_ds_interval (p_seconds in integer) return interval day to second;
@@ -436,15 +444,17 @@ function  fit_data_loaded (p_fit_id in integer) return integer;
 
 procedure reload_fit_data (p_fit_id in integer);
 
-function  analyze_data (p_person_id in integer, p_field in integer, p_sport_profile in varchar2, p_measurements in integer default 40) return text_tab pipelined;
+function  analyze_data (p_person_id in integer, p_field in integer, p_sport_profile in varchar2, p_measurements in integer default 40, p_distance in number default 0) return text_tab pipelined;
 
-function  analyze_graph (p_person_id in integer, p_field in integer, p_sport_profile in varchar2, p_measurements in integer default 20) return int_tab pipelined;
+function  analyze_graph (p_person_id in integer, p_field in integer, p_sport_profile in varchar2, p_measurements in integer default 20, p_distance in number default 0) return int_tab pipelined;
 
 procedure load_json_files (p_person_id in integer, p_directory in varchar2 default 'GARMIN');
 
 procedure evaluate_json_data;
 
 procedure archive_fit_files (p_retention_days in integer default 7);
+
+procedure rename_high_value;
 
 end garmin_pkg;
 /
@@ -654,6 +664,21 @@ end to_dt;
 /******************************************************************************************************************************************************************/
 
 --
+-- Convert json field to date
+--
+function  extended_to_date (p_string in varchar2) return date
+is
+begin
+  return to_date (substr (p_string, 1, 10) || substr (p_string, 12, 8), 'YYYY-MM-DDHH24:MI:SS');
+
+exception when others then
+  util.show_error ('Error in function extended_to_date for ' || p_string || '. Not a date or unknown format.', sqlerrm);
+  return null;
+end extended_to_date;
+
+/******************************************************************************************************************************************************************/
+
+--
 -- Convert interval DS to seconds
 --
 function interval_ds_to_seconds (p_interval in interval day to second) return integer
@@ -855,8 +880,7 @@ end parse_csv_by_column_name;
 --
 procedure parse_csv_by_field_name (p_csv_file in varchar2, p_directory in varchar2 default 'GARMIN', p_skip integer default 1)
 is
-begin
-  
+begin  
   insert into gmn_excel_output (
   line_number, col001,col002,col003,col004,col005,col006,col007,col008,col009,col010,col011,col012,col013,col014,col015,col016,
   col017,col018,col019,col020,col021,col022,col023,col024,col025,col026,col027,col028,col029,col030,col031,col032,col033,col034,col035,
@@ -1196,15 +1220,17 @@ end reload_fit_data;
 --
 -- Analytics pivot function
 --
-function analyze_data (p_person_id in integer, p_field in integer, p_sport_profile in varchar2, p_measurements in integer default 40) return text_tab pipelined
-is 
+function analyze_data (p_person_id in integer, p_field in integer, p_sport_profile in varchar2,
+              p_measurements in integer default 40, p_distance in number default 0) return text_tab pipelined
+is
 type cell_ty       is record (cell varchar2 (50));
 type cell_row_ty   is table of cell_ty index by pls_integer;
 type cell_field_ty is table of cell_row_ty index by pls_integer;
 l_cells            cell_field_ty;
 l_row              integer (4) := 0;
+l_lap              integer (4);
 l_max_laps         integer (2) := 1;
-begin 
+begin
   for y in 0 .. p_measurements
   loop
     l_cells (0) (y).cell := to_char (y);
@@ -1215,34 +1241,49 @@ begin
   end loop;
   l_cells (0) (0).cell := p_sport_profile;
 
-  for d in (select ff.user_id, si.fit_id, si.sport_profile_name, trunc (si.start_time) start_time from gmn_session_info si, gmn_fit_files ff
-            where ff.id = si.fit_id and si.sport_profile_name = p_sport_profile and ff.user_id = p_person_id
-            order by si.start_time desc
+  -- First find the days that we want to show in the overview
+  for dy in (select trunc (si.start_time) start_time from gmn_session_info si
+               where si.sport_profile_name = p_sport_profile and si.person_id = p_person_id
+                                          group by trunc (si.start_time)
+                                          having sum (total_distance) >= p_distance or p_distance = 0
+            order by 1 desc
             fetch first p_measurements rows only)
   loop
     l_row := l_row + 1;
-    l_cells (l_row) (0).cell := to_char (d.start_time, 'YYYY/MM/DD');
-    for j in (select rownum lap,avg_heart_rate, total_distance, round(3.6 *  enhanced_avg_speed, 2) enhanced_avg_speed, total_timer_time,
-    case enhanced_avg_speed when 0 then null else substr (garmin_pkg.seconds_to_ds_interval (round(1000 / enhanced_avg_speed)), 15, 8) end tempo, total_calories, round (3.6 * enhanced_max_speed, 2) enhanced_max_speed, total_ascent, 
-			  total_descent, enhanced_max_altitude
+    l_cells (l_row) (0).cell := to_char (dy.start_time, 'YYYY/MM/DD');
+              
+              l_lap := 0;
+              for fit in (select si2.fit_id from gmn_session_info si2 
+                where trunc (si2.start_time) = dy.start_time and si2.sport_profile_name = p_sport_profile and si2.person_id = p_person_id
+                                                         order by si2.start_time)
+    loop
+              
+              
+    for j in (select avg_heart_rate, total_distance, round(3.6 *  enhanced_avg_speed, 2) enhanced_avg_speed, total_timer_time,
+                case enhanced_avg_speed when 0 then null else substr (garmin_pkg.seconds_to_ds_interval (round(1000 / enhanced_avg_speed)), 15, 8) end tempo,
+                          total_calories, round (3.6 * enhanced_max_speed, 2) enhanced_max_speed,
+                          total_ascent, total_descent, enhanced_max_altitude
            from gmn_fit_data gf
-           where gf.fit_id= d.fit_id and gf.start_position_lat is not null and gf.total_training_effect is null
+           where gf.fit_id= fit.fit_id and gf.start_position_lat is not null and gf.total_training_effect is null
            order by id)
-    loop 
+    loop
+              l_lap := l_lap + 1;
       case
-	  when p_field = 1  then l_cells (l_row) (j.lap).cell := to_char (j.avg_heart_rate);
-	  when p_field = 2  then l_cells (l_row) (j.lap).cell := to_char (round (j.total_distance));
-	  when p_field = 3  then l_cells (l_row) (j.lap).cell := to_char (j.enhanced_avg_speed, '990D99');
-	  when p_field = 4  then l_cells (l_row) (j.lap).cell := to_char (round (j.total_timer_time)); 
-	  when p_field = 5  then l_cells (l_row) (j.lap).cell := to_char (j.tempo);
-	  when p_field = 6  then l_cells (l_row) (j.lap).cell := to_char (j.total_calories); 
-	  when p_field = 7  then l_cells (l_row) (j.lap).cell := to_char (j.enhanced_max_speed, '990D99'); 
-	  when p_field = 8  then l_cells (l_row) (j.lap).cell := to_char (j.total_ascent); 
-	  when p_field = 9  then l_cells (l_row) (j.lap).cell := to_char (j.total_descent);
-	  when p_field = 10 then l_cells (l_row) (j.lap).cell := to_char (j.enhanced_max_altitude, '990D99');
+        when p_field = 1  then l_cells (l_row) (l_lap).cell := to_char (j.avg_heart_rate);
+        when p_field = 2  then l_cells (l_row) (l_lap).cell := to_char (round (j.total_distance));
+        when p_field = 3  then l_cells (l_row) (l_lap).cell := to_char (j.enhanced_avg_speed, '990D99');
+        when p_field = 4  then l_cells (l_row) (l_lap).cell := to_char (round (j.total_timer_time));
+        when p_field = 5  then l_cells (l_row) (l_lap).cell := to_char (j.tempo);
+        when p_field = 6  then l_cells (l_row) (l_lap).cell := to_char (j.total_calories);
+        when p_field = 7  then l_cells (l_row) (l_lap).cell := to_char (j.enhanced_max_speed, '990D99');
+        when p_field = 8  then l_cells (l_row) (l_lap).cell := to_char (j.total_ascent);
+        when p_field = 9  then l_cells (l_row) (l_lap).cell := to_char (j.total_descent);
+        when p_field = 10 then l_cells (l_row) (l_lap).cell := to_char (j.enhanced_max_altitude, '990D99');
       end case;
-	  l_max_laps := greatest (l_max_laps, j.lap);
+     l_max_laps := greatest (l_max_laps, l_lap);
     end loop;
+  end loop;
+  
   end loop;
 
   for y in 0 .. l_max_laps
@@ -1256,9 +1297,10 @@ begin
   end;
   end loop;
 
-exception when others then 
+exception when others then
    util.show_error ('Error in function analyze_data for person_id: ' || p_person_id || ',  Field: ' || p_field || '. Sport: ' || p_sport_profile, sqlerrm);
 end analyze_data;
+
 
 /******************************************************************************************************************************************************************/
 
@@ -1270,26 +1312,27 @@ is
 type array_ty is varray (7) of integer;
 l_array array_ty := array_ty ();
 begin    
-for j in (select rownum as lap, gf.id, lead (gf.id, 1, 1e6) over (order by gf.id) next_id, avg_heart_rate, total_distance,
-             round (3.6 * enhanced_avg_speed, 2) enhanced_avg_speed, total_timer_time,
-             round (3.6 * enhanced_max_speed, 2) enhanced_max_speed, total_ascent, total_descent
-           from gmn_fit_data gf
-                               where gf.fit_id = p_fit_id and start_position_lat is not null and total_training_effect is null)
-loop
-  l_array.delete;
-  for s in (select rownum as pos, round (hr.column_value) seconds from gmn_fit_data gf2
-       join table (apex_string.split (gf2.time_in_hr_zone,'|')) hr on 1 = 1
-       where gf2.fit_id= p_fit_id and gf2.id between j.id and j.next_id and time_in_hr_zone is not null)
+  for j in (select rownum as lap, gf.id, lead (gf.id, 1, 1e6) over (order by gf.id) next_id, avg_heart_rate, total_distance,
+               round (3.6 * enhanced_avg_speed, 2) enhanced_avg_speed, total_timer_time,
+               round (3.6 * enhanced_max_speed, 2) enhanced_max_speed, total_ascent, total_descent
+             from gmn_fit_data gf
+             where gf.fit_id = p_fit_id and start_position_lat is not null and total_training_effect is null)
   loop
-    dbms_output.put_line('L: ' || j.lap || '. P: ' || s.pos || '. S: ' || s.seconds);
-              l_array.extend;
-    l_array (s.pos) := s.seconds;
+    l_array.delete;
+    for s in (select rownum as pos, round (hr.column_value) seconds from gmn_fit_data gf2
+              join table (apex_string.split (gf2.time_in_hr_zone,'|')) hr on 1 = 1
+              where gf2.fit_id= p_fit_id and gf2.id between j.id and j.next_id and time_in_hr_zone is not null)
+    loop
+     -- l_debug := 'L: ' || j.lap || '. P: ' || s.pos || '. S: ' || s.seconds;
+      l_array.extend;
+      l_array (s.pos) := s.seconds;
+    end loop;
+    pipe row (heartrate_zone_row (j.lap, j.avg_heart_rate, j.total_timer_time, l_array (1), l_array (2), l_array (3), l_array (4), l_array (5), l_array (6), l_array (7),
+              j.total_distance, j.enhanced_avg_speed, j.enhanced_max_speed, j.total_ascent, j.total_descent)); 
   end loop;
-  pipe row (heartrate_zone_row (j.lap, j.avg_heart_rate, j.total_timer_time, l_array (1), l_array (2), l_array (3), l_array (4), l_array (5), l_array (6), l_array (7),
-            j.total_distance, j.enhanced_avg_speed, j.enhanced_max_speed, j.total_ascent, j.total_descent)); 
-end loop;
-
+  
 exception when others then 
+--   util.show_error (l_debug, sqlerrm, false);
    util.show_error ('Error in function heartrate_distribution for Fit ID: ' || p_fit_id, sqlerrm);
 end heartrate_distribution;
 
@@ -1298,52 +1341,69 @@ end heartrate_distribution;
 --
 -- Analytics function
 --
-function analyze_graph (p_person_id in integer, p_field in integer, p_sport_profile in varchar2, p_measurements in integer default 20) return int_tab pipelined
-is 
+function analyze_graph (p_person_id in integer, p_field in integer, p_sport_profile in varchar2,
+                                          p_measurements in integer default 20, p_distance in number default 0) return int_tab pipelined
+is
 type cell_ty       is record (cell number (10, 2));
-type cell_row_ty   is table of cell_ty     index by pls_integer;
+type cell_row_ty   is table of cell_ty     index by simple_integer;
 type cell_field_ty is table of cell_row_ty index by pls_integer;
 type train_date_ty is table of date        index by pls_integer;
 l_cells            cell_field_ty;
 l_row              integer (4) := 0;
+l_lap              integer (4);
 l_train_dates      train_date_ty;
-begin 
+begin
+  -- Reset
   for y in 1 .. p_measurements
   loop
-  --  l_cells (0) (y).cell := y;
-    for x in 1 .. 50
+    for x in 1 .. 50 -- This is the number of laps. High for future enhancements
     loop
       l_cells (x) (y).cell := null;
     end loop;
   end loop;
 
-  for d in (select ff.user_id, si.fit_id, si.sport_profile_name, trunc (si.start_time) start_time from gmn_session_info si, gmn_fit_files ff
-            where ff.id = si.fit_id and si.sport_profile_name = p_sport_profile and ff.user_id = p_person_id
-            order by si.start_time desc
+  -- First find the days that we want to show in the graph
+  for dy in (select trunc (si.start_time) start_time from gmn_session_info si
+            where si.sport_profile_name = p_sport_profile and si.person_id = p_person_id
+                                          group by trunc (si.start_time)
+                                          having sum (total_distance) >= p_distance or p_distance = 0
+            order by 1 desc
             fetch first p_measurements rows only)
   loop
     l_row := l_row + 1;
-    l_train_dates (l_row) := d.start_time;
-    for j in (select rownum lap,avg_heart_rate, total_distance, round(3.6 *  enhanced_avg_speed, 2) enhanced_avg_speed, total_timer_time,
-    case enhanced_avg_speed when 0 then null else round (1000 / enhanced_avg_speed) end tempo, total_calories, round (3.6 * enhanced_max_speed, 2) enhanced_max_speed, total_ascent, 
-  			  total_descent, enhanced_max_altitude
-              from gmn_fit_data gf
-             where gf.fit_id= d.fit_id and gf.start_position_lat is not null and gf.total_training_effect is null
-             order by id)
-    loop
-      case
-  	  when p_field = 1  then l_cells (j.lap) (l_row).cell := j.avg_heart_rate;
-  	  when p_field = 2  then l_cells (j.lap) (l_row).cell := round (j.total_distance);
-  	  when p_field = 3  then l_cells (j.lap) (l_row).cell := round (j.enhanced_avg_speed, 2);
-  	  when p_field = 4  then l_cells (j.lap) (l_row).cell := round (j.total_timer_time); 
-  	  when p_field = 5  then l_cells (j.lap) (l_row).cell := j.tempo;
-  	  when p_field = 6  then l_cells (j.lap) (l_row).cell := j.total_calories; 
-  	  when p_field = 7  then l_cells (j.lap) (l_row).cell := round (j.enhanced_max_speed, 2); 
-  	  when p_field = 8  then l_cells (j.lap) (l_row).cell := j.total_ascent; 
-  	  when p_field = 9  then l_cells (j.lap) (l_row).cell := j.total_descent;
-  	  when p_field = 10 then l_cells (j.lap) (l_row).cell := j.enhanced_max_altitude;
-      end case;
-    end loop;
+    l_train_dates (l_row) := dy.start_time;
+              
+              -- Second loop to determine which fit_id's need to be evaluated for that day
+              l_lap := 0;
+              for fit in (select si2.fit_id from gmn_session_info si2 
+                where trunc (si2.start_time) = dy.start_time and si2.sport_profile_name = p_sport_profile and si2.person_id = p_person_id
+                                                         order by si2.start_time)
+    loop  
+                -- Third loop fetch the actual data and assign to the cell
+      for j in (select avg_heart_rate, total_distance, round (3.6 *  enhanced_avg_speed, 2) enhanced_avg_speed, total_timer_time, 
+                                                                        case enhanced_avg_speed when 0 then null else round (1000 / enhanced_avg_speed) end tempo,
+                                                                        total_calories, round (3.6 * enhanced_max_speed, 2) enhanced_max_speed,
+                                                                        total_ascent, total_descent, enhanced_max_altitude
+                from gmn_fit_data gf
+               where gf.fit_id= fit.fit_id and gf.start_position_lat is not null and gf.total_training_effect is null
+               order by id)
+      loop
+                  l_lap := l_lap + 1;
+        case
+          when p_field = 1  then l_cells (l_lap) (l_row).cell := j.avg_heart_rate;
+          when p_field = 2  then l_cells (l_lap) (l_row).cell := round (j.total_distance);
+          when p_field = 3  then l_cells (l_lap) (l_row).cell := round (j.enhanced_avg_speed, 2);
+          when p_field = 4  then l_cells (l_lap) (l_row).cell := round (j.total_timer_time);
+          when p_field = 5  then l_cells (l_lap) (l_row).cell := j.tempo;
+          when p_field = 6  then l_cells (l_lap) (l_row).cell := j.total_calories;
+          when p_field = 7  then l_cells (l_lap) (l_row).cell := round (j.enhanced_max_speed, 2);
+          when p_field = 8  then l_cells (l_lap) (l_row).cell := j.total_ascent;
+          when p_field = 9  then l_cells (l_lap) (l_row).cell := j.total_descent;
+          when p_field = 10 then l_cells (l_lap) (l_row).cell := j.enhanced_max_altitude;
+        end case;
+      end loop;
+  end loop;
+  
   end loop;
 
   for y in 0 .. p_measurements
@@ -1351,15 +1411,16 @@ begin
   begin
     pipe row (int_row (l_train_dates (y), l_cells (1) (y).cell, l_cells (2) (y).cell, l_cells (3) (y).cell, l_cells (4) (y).cell, l_cells (5) (y).cell,
               l_cells (6)  (y).cell, l_cells (7)  (y).cell, l_cells (8)  (y).cell, l_cells (9)  (y).cell, l_cells (10) (y).cell,
-              l_cells (11) (y).cell, l_cells (12) (y).cell, l_cells (13) (y).cell, l_cells (14) (y).cell, l_cells (15) (y).cell,  
+              l_cells (11) (y).cell, l_cells (12) (y).cell, l_cells (13) (y).cell, l_cells (14) (y).cell, l_cells (15) (y).cell,
               l_cells (16) (y).cell, l_cells (17) (y).cell, l_cells (18) (y).cell, l_cells (19) (y).cell, l_cells (20) (y).cell));
   exception when others then null;
   end;
   end loop;
 
-exception when others then 
+exception when others then
    util.show_error ('Error in function analyze_graph for person_id: ' || p_person_id || ',  Field: ' || p_field || '. Sport: ' || p_sport_profile, sqlerrm);
 end analyze_graph;
+
 
 /******************************************************************************************************************************************************************/
 
@@ -1411,13 +1472,13 @@ insert into gmn_hydration
   , minheartrate, moderateintensityminutes, remainingkilocalories, avgwakingrespirationvalue, highestrespirationvalue                    
   , latestrespirationtimegmt, latestrespirationvalue, lowestrespirationvalue, restingcaloriesfromactivity, restingheartrate                                                
   , restingheartratetimestamp, totaldistancemeters, totalkilocalories, totalsteps, userintensityminutesgoal)
-select uuid, person_id, version, vigorousintensityminutes, wellnessactivekilocalories, wellnessdistancemeters, date_test (wellnessendtimegmt) wellnessendtimegmt
-  , date_test (wellnessendtimelocal) wellnessendtimelocal, wellnesskilocalories, date_test(wellnessstarttimegmt) wellnessstarttimegmt,
-  date_test(wellnessstarttimelocal) wellnessstarttimelocal, wellnesstotalkilocalories
-  , to_date (respiration_calendardate, 'YYYY-MM-DD'), hydration_goalinml, date_test(hydration_lastentrytimestamplocal) hydration_lastentrytimestamplocal, 
+select uuid, person_id, version, vigorousintensityminutes, wellnessactivekilocalories, wellnessdistancemeters, extended_to_date (wellnessendtimegmt) wellnessendtimegmt
+  , extended_to_date (wellnessendtimelocal) wellnessendtimelocal, wellnesskilocalories, extended_to_date(wellnessstarttimegmt) wellnessstarttimegmt,
+  extended_to_date(wellnessstarttimelocal) wellnessstarttimelocal, wellnesstotalkilocalories
+  , to_date (respiration_calendardate, 'YYYY-MM-DD'), hydration_goalinml, extended_to_date(hydration_lastentrytimestamplocal) hydration_lastentrytimestamplocal, 
   hydration_sweatlossinml, hydration_valueinml, maxheartrate, minavgheartrate            
   , minheartrate, moderateintensityminutes, remainingkilocalories, respiration_avgwakingrespirationvalue, respiration_highestrespirationvalue
-  , date_test (respiration_latestrespirationtimegmt) respiration_latestrespirationtimegmt, respiration_latestrespirationvalue, respiration_lowestrespirationvalue, restingcaloriesfromactivity, restingheartrate                           
+  , extended_to_date (respiration_latestrespirationtimegmt) respiration_latestrespirationtimegmt, respiration_latestrespirationvalue, respiration_lowestrespirationvalue, restingcaloriesfromactivity, restingheartrate                           
   , restingheartratetimestamp, totaldistancemeters, totalkilocalories, totalsteps, userintensityminutesgoal
 from v_gmn_json_hydration
 where uuid not in (select uuid from gmn_hydration);
@@ -1573,6 +1634,43 @@ exception when others then
    util.show_error ('Error in function archive_fit_files for retention: ' || p_retention_days, sqlerrm);
 end archive_fit_files;
 
+/******************************************************************************************************************************************************************/
+
+--
+-- Rename partitions according to their fit ID
+--
+procedure rename_high_value
+is
+   l_cursor    integer;
+   l_length    integer;
+   l_stmt      varchar2(200);
+   l_string    varchar2(200);
+begin
+   for j in (select table_name, partition_name from dba_tab_partitions
+             where table_name = 'GMN_FIT_DATA' and partition_name like 'SYS%')
+   loop
+      l_cursor := dbms_sql.open_cursor (1);
+      l_stmt := 'select high_value from dba_tab_partitions where table_name = ''' || j.table_name || ''' and partition_name = ''' || j.partition_name || '''';
+      dbms_sql.parse (l_cursor, l_stmt, dbms_sql.native);
+      dbms_sql.define_column_long (l_cursor,1);
+                
+      /* Only attempt to process the return value when fetched. */
+      if dbms_sql.execute_and_fetch (l_cursor) = 1
+      then
+        dbms_sql.column_value_long (l_cursor, 1, 200, 0, l_string, l_length);
+        execute immediate 'alter table ' || j.table_name || ' rename partition ' || j.partition_name || ' to P' || l_string;
+      end if;
+
+      if dbms_sql.is_open (l_cursor)
+      then
+        dbms_sql.close_cursor (l_cursor);
+      end if;
+   end loop;
+
+exception when others then 
+   util.show_error ('Error in procedure rename_high_value', sqlerrm);
+end rename_high_value;
+
 end garmin_pkg;
 /
 
@@ -1697,13 +1795,13 @@ insert into gmn_hydration
 , minheartrate, moderateintensityminutes, remainingkilocalories, avgwakingrespirationvalue, highestrespirationvalue                    
 , latestrespirationtimegmt, latestrespirationvalue, lowestrespirationvalue, restingcaloriesfromactivity, restingheartrate                                                
 , restingheartratetimestamp, totaldistancemeters, totalkilocalories, totalsteps, userintensityminutesgoal)
-select uuid, person_id, version, vigorousintensityminutes, wellnessactivekilocalories, wellnessdistancemeters, date_test(wellnessendtimegmt) wellnessendtimegmt
-, date_test(wellnessendtimelocal) wellnessendtimelocal, wellnesskilocalories, date_test(wellnessstarttimegmt) wellnessstarttimegmt,
-date_test(wellnessstarttimelocal) wellnessstarttimelocal, wellnesstotalkilocalories
-, to_date(respiration_calendardate, 'YYYY-MM-DD'), hydration_goalinml, date_test(hydration_lastentrytimestamplocal) hydration_lastentrytimestamplocal, 
+select uuid, person_id, version, vigorousintensityminutes, wellnessactivekilocalories, wellnessdistancemeters, extended_to_date(wellnessendtimegmt) wellnessendtimegmt
+, extended_to_date(wellnessendtimelocal) wellnessendtimelocal, wellnesskilocalories, extended_to_date(wellnessstarttimegmt) wellnessstarttimegmt,
+extended_to_date(wellnessstarttimelocal) wellnessstarttimelocal, wellnesstotalkilocalories
+, to_date(respiration_calendardate, 'YYYY-MM-DD'), hydration_goalinml, extended_to_date(hydration_lastentrytimestamplocal) hydration_lastentrytimestamplocal, 
 hydration_sweatlossinml, hydration_valueinml, maxheartrate, minavgheartrate            
 , minheartrate, moderateintensityminutes, remainingkilocalories, respiration_avgwakingrespirationvalue, respiration_highestrespirationvalue
-, date_test(respiration_latestrespirationtimegmt) respiration_latestrespirationtimegmt, respiration_latestrespirationvalue, respiration_lowestrespirationvalue, restingcaloriesfromactivity, restingheartrate                           
+, extended_to_date(respiration_latestrespirationtimegmt) respiration_latestrespirationtimegmt, respiration_latestrespirationvalue, respiration_lowestrespirationvalue, restingcaloriesfromactivity, restingheartrate                           
 , restingheartratetimestamp, totaldistancemeters, totalkilocalories, totalsteps, userintensityminutesgoal
 from v_gmn_json_hydration
 where uuid not in (select uuid from gmn_hydration);
@@ -2444,28 +2542,28 @@ https://drive.google.com/drive/folders/1fpcG9lA2Wy9axb4arsDI1TDDEyQoGOPZ
 
 
 begin
-update gmn_json_data set view_name =  'v_gmn_json_hydration'  where name like  '%UDSFile%' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_biometrics_profile'  where name like  '%userBioMetricProfileData%' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_courses'  where name like  '%courses%' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_gear'  where name like  '%gear%' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_heartrate_zones'  where name like  '%heartRateZones%' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_personal_records'  where name like  '%personalRecord%' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_user_profile'  where name like  '%user_profile%' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_user_settings'  where name like  '%user_settings%' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_sleep_data'  where name like  '%sleepData%' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_training_readyness'  where name like '%TrainingReadinessDTO%' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_TrainingHistory'  where name like 'TrainingHistory%.json' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_metrics_metadata'  where name like 'MetricsMaxMetData_%.json' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_runrace_predictions'  where name like '%RunRacePredictions%' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_AbnormalHrEvents'  where name like '%AbnormalHrEvents.json' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_EnduranceScore'  where name like 'EnduranceScore_%.json' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_fitnessAgeData'  where name like '%fitnessAgeData.json' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_HillScore'  where name like 'HillScore%.json' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_HeatAltitudeAcclimation'  where name like 'MetricsHeatAltitudeAcclimation%.json' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_TrainingHistory'  where name like 'TrainingHistory%.json' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_CalendarItems'  where name like 'CalendarItems.json' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_events'  where name like 'events.json' and view_name is null;
-update gmn_json_data set view_name =  'v_gmn_json_customer'  where name like 'customer.json' and view_name is null;
-commit;
+  update gmn_json_data set view_name =  'v_gmn_json_hydration'  where name like  '%UDSFile%' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_biometrics_profile'  where name like  '%userBioMetricProfileData%' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_courses'  where name like  '%courses%' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_gear'  where name like  '%gear%' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_heartrate_zones'  where name like  '%heartRateZones%' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_personal_records'  where name like  '%personalRecord%' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_user_profile'  where name like  '%user_profile%' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_user_settings'  where name like  '%user_settings%' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_sleep_data'  where name like  '%sleepData%' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_training_readyness'  where name like '%TrainingReadinessDTO%' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_TrainingHistory'  where name like 'TrainingHistory%.json' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_metrics_metadata'  where name like 'MetricsMaxMetData_%.json' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_runrace_predictions'  where name like '%RunRacePredictions%' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_AbnormalHrEvents'  where name like '%AbnormalHrEvents.json' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_EnduranceScore'  where name like 'EnduranceScore_%.json' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_fitnessAgeData'  where name like '%fitnessAgeData.json' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_HillScore'  where name like 'HillScore%.json' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_HeatAltitudeAcclimation'  where name like 'MetricsHeatAltitudeAcclimation%.json' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_TrainingHistory'  where name like 'TrainingHistory%.json' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_CalendarItems'  where name like 'CalendarItems.json' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_events'  where name like 'events.json' and view_name is null;
+  update gmn_json_data set view_name =  'v_gmn_json_customer'  where name like 'customer.json' and view_name is null;
+  commit;
 end;
 /

@@ -1,0 +1,228 @@
+Descriptive statistics. Limited set. Sample.
+Measures of central tendency
+   mean   : Average
+   median : Middle value if odd measurements, average one of the middle 2 if even
+   mode   : occuring most frtequently
+Measures of dispersion. Spreading
+   variance & standard deviation. SD is average distance between each datapoint and the mean sqrt (1/ n * S (xi - xg) ** 2)
+   -- If it doesn't cover the whole populatiion, then use (n - 1).
+      Variance is the squared standard deviation
+   range  : difference between the maximum and minimum value
+   interquartile range. The range of the middle 50 %.
+     NTILE(2) OVER (PARTITION BY deptno ORDER BY sal) AS bucket_no
+
+Normal distribution or bell curve
+Uniform distribution
+
+Frequency Tables Of often a distinct value occurs
+Contingency table: Multiple variables
+Charts
+
+Inferential statistics. Population as a whole
+   1. Hypothesis. Many tests available
+   2. Sample
+
+measurement levels
+Categorical:
+  nominal  : named, not possible to order.
+  ordinal  : can have a meaningful ranking. Categorisable. Ranking does not have a mathematical meaning
+      ranking: 	  first, second, third
+	  satisfaction: neutral, satisfied, unsatisfied, very satisfied
+	  levels of education: high school, bachelor, master
+
+Numerical: discrete (# goals) / continuous (length)
+  interval : numbers that can be evaluated meaningfully. E.g.: income, weight, age
+  ratio    : True zero point at the beginning. E.g: Slowest runner took 3 times as long as the fastest.
+  
+t-test: statistical test procedure
+  Checks if there is a difference between the mean of 2 groups
+  - one sample t-test. Mean of a sample with a known reference mean.
+  - independant sample t-test. Compare the mean between 2 independant groups or samples
+  - paired samples t-tests. Compare before and after measurements of the same group
+  
+H0 hypothesis: there is no difference
+t = difference between the mean / standard deviation from the mean    : Standard Error
+
+Greek letters:
+mu : mean
+sigma : standard deviation
+
+Statistical significance: p value < threshold
+A small p-value does not prove that the hypothesis is true. It is just unlkely.
+  Type 1 error: When a true hypthesis is rejected.
+  Type 2 error: When a false hypothesis is accepted
+Inferential statistics: nominal, ordinal, interval, ratio
+Nominal data is best presented in a bar chart
+Ordinal data is best presented in a histogram
+
+T-test: Statistical test procedure. Checks the difference betwee 2 groups.
+
+One sample t-test: Compare the average with a known average mean.
+Independant sample t-test: Compare the mean of 2 independant groups
+Paired sample t-test: Compare the mean of 2 dependant groups. Measurements are available in pairs.
+T-Value = difference between the mean values / standard deviation from the mean
+Stadard deviation is also called the standard error.
+
+SST Sum of squares total
+SSR Sum of squares due to Regression
+SSE Sum of squared due to error
+SST = SSR + SSE
+R ** 2 = SSR / (SSR + SST)
+
+The correlation coefficient is measured on a scale that varies from + 1 through 0 to – 1.
+Complete correlation between two variables is expressed by either + 1 or -1.
+When one variable increases as the other increases the correlation is positive;
+when one decreases as the other increases it is negative. Complete absence of correlation is represented by 0.
+Figure 11.1 gives some graphical representations of correlation.
+positive relation -- negative relation
+
+--
+https://www.oracletutorial.com/oracle-analytic-functions/
+median (col1) over (partition by col2)
+ STDDEV(salary) OVER (ORDER BY hire_date) StdDev
+STATS_MODE takes as its argument a set of values and returns the value that occurs with the greatest frequency. 
+ STATS_MODE(salary) 
+ 
+REGR_ (Linear Regression) Functions
+The linear regression functions are:
+
+REGR_SLOPE
+
+REGR_INTERCEPT
+
+REGR_COUNT
+
+REGR_R2
+
+REGR_AVGX
+
+REGR_AVGY
+
+REGR_SXX
+
+REGR_SYY
+
+REGR_SXY
+
+RANK() OVER (PARTITION BY partition_expression ORDER BY order_expression)
+
+The Oracle NTH_VALUE() function is an analytic function that returns the Nth value in a set of values.
+NTH_VALUE (expression, N)
+[ FROM { FIRST | LAST } ]
+[ { RESPECT | IGNORE } NULLS ] 
+OVER (
+    [ query_partition_clause ] 
+    order_by_clause
+    [frame_clause]
+)
+
+SELECT
+    product_id,
+    product_name,
+    list_price,
+    NTH_VALUE(product_name,2) OVER (
+        ORDER BY list_price DESC
+        RANGE BETWEEN 
+            UNBOUNDED PRECEDING AND 
+            UNBOUNDED FOLLOWING
+    ) AS second_most_expensive_product
+FROM
+    products;
+	
+	
+CORR returns the coefficient of correlation of a set of number pairs. You can use it as an aggregate or analytic function.
+corr (col1, col2) over (<analytic_clause>)
+
+Values always range from -1 for a perfectly inverse, or negative, relationship to 1 for a perfectly positive correlation. 
+
+------------------------------------
+
+create materialized view v_gmn_stats_data (person_id, fit_id, sport_profile_name, start_time, total_distance, min_speed, median_speed, stats_mode_speed, max_speed, avg_speed, stddev_speed, min_hr, median_hr, stats_mode_hr, max_hr, stddev_hr, avg_hr)
+  segment creation immediate
+  tablespace theo 
+  build immediate
+  using index 
+  refresh force on demand start with sysdate next (trunc(sysdate) + 1) + 8 / 24
+  as select si.person_id, gf.fit_id, si.sport_profile_name, si.start_time, si.total_distance, round(3.6 * min (gf.enhanced_speed), 2) min_speed,
+  round (3.6 * median (gf.enhanced_speed), 2) median_speed, round (3.6 * stats_mode (gf.enhanced_speed), 2) stats_mode_speed,
+  round (3.6 * max (gf.enhanced_speed), 2) max_speed, round (3.6 * avg (gf.enhanced_speed), 2) avg_speed,
+  round (3.6 * stddev (gf.enhanced_speed), 2) stddev_speed,
+  min (gf.heart_rate) min_hr, median (gf.heart_rate) median_hr,
+   stats_mode (gf.heart_rate) stats_mode_hr, max (gf.heart_rate) max_hr,
+  round (stddev (gf.heart_rate), 2) stddev_hr, round (avg (gf.heart_rate), 2) avg_hr
+           from gmn_fit_data gf
+		   join gmn_session_info si on (si.fit_id = gf.fit_id)
+           group by si.person_id, gf.fit_id, si.sport_profile_name, si.start_time, si.total_distance;
+	
+create materialized view v_gmn_stats_interval_data (person_id, sport_profile_name, total_distance, start_time, hr_value, group_format, stats_function)
+  segment creation immediate
+  tablespace theo 
+  build immediate
+  using index 
+  refresh force on demand start with sysdate next (trunc(sysdate) + 1) + 8 / 24
+  as with formats as 
+   (select 'YYYY/MM/DD' fmt from dual
+    union all select 'YYYY/MM' from dual
+    union all select 'YYYY/Q' from dual
+    union all select 'YYYY' from dual),
+lvl as (select level id from dual connect by level <= 6)
+select si.person_id, si.sport_profile_name, sum (si.total_distance) total_distance, to_char (si.start_time, f.fmt) start_time,
+    case
+      when lvl.id = 1 then min (gf.heart_rate)
+      when lvl.id = 2 then stats_mode (gf.heart_rate)     
+      when lvl.id = 3 then median (gf.heart_rate)
+      when lvl.id = 4 then round (stddev (gf.heart_rate), 2)
+      when lvl.id = 5 then round (avg (gf.heart_rate), 2)
+      when lvl.id = 6 then max (gf.heart_rate) end  hr_value,  
+       f.fmt group_format,
+    case
+      when lvl.id = 1 then 'MIN'
+      when lvl.id = 2 then 'STATS_MODE'
+      when lvl.id = 3 then 'MEDIAN'
+      when lvl.id = 4 then 'STDDEV'
+      when lvl.id = 5 then 'AVG'
+      when lvl.id = 6 then 'MAX' end   stats_function
+       from gmn_fit_data gf
+	   join gmn_session_info si on (si.fit_id = gf.fit_id)
+       join formats f on (1=1)
+       join lvl       on (1=1)
+     group by si.person_id, si.sport_profile_name, to_char (si.start_time, f.fmt), f.fmt, lvl.id;
+	 
+	 -----------------------------------------------------
+	 
+	 
+	
+create materialized view v_gmn_stats_interval_data (person_id, sport_profile_name, total_distance, start_time, hr_value, group_format, stats_function)
+  segment creation immediate
+  tablespace theo 
+  build immediate
+  using index 
+  refresh force on demand start with sysdate next (trunc(sysdate) + 1) + 8 / 24
+  as with formats as 
+   (select 'DD' fmt from dual
+    union all select 'YYYY' from dual
+    union all select 'Q' from dual
+	   union all select 'IW' from dual
+    union all select 'MM' from dual),
+lvl as (select level id from dual connect by level <= 6)
+select si.person_id, si.sport_profile_name, sum (si.total_distance) total_distance, trunc (si.start_time, f.fmt) start_time,
+    case
+      when lvl.id = 1 then min (gf.heart_rate)
+      when lvl.id = 2 then stats_mode (gf.heart_rate)     
+      when lvl.id = 3 then median (gf.heart_rate)
+      when lvl.id = 4 then round (stddev (gf.heart_rate), 2)
+      when lvl.id = 5 then round (avg (gf.heart_rate), 2)
+      when lvl.id = 6 then max (gf.heart_rate) end  hr_value,  
+       f.fmt group_format,
+    case
+      when lvl.id = 1 then 'MIN'
+      when lvl.id = 2 then 'STATS_MODE'
+      when lvl.id = 3 then 'MEDIAN'
+      when lvl.id = 4 then 'STDDEV'
+      when lvl.id = 5 then 'AVG'
+      when lvl.id = 6 then 'MAX' end   stats_function
+       from gmn_fit_data gf
+	   join gmn_session_info si on (si.fit_id = gf.fit_id)
+       join formats f on (1=1)
+       join lvl       on (1=1)
+     group by si.person_id, si.sport_profile_name, trunc (si.start_time, f.fmt), f.fmt, lvl.id;
