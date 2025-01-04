@@ -456,6 +456,8 @@ procedure archive_fit_files (p_retention_days in integer default 7);
 
 procedure rename_high_value;
 
+function f_translate (p_word in varchar2, p_lang_from in varchar2 default 'nl', p_lang_to in varchar2 default 'en', p_initcap in integer default 1) return varchar2;
+
 end garmin_pkg;
 /
 
@@ -1671,6 +1673,35 @@ exception when others then
    util.show_error ('Error in procedure rename_high_value', sqlerrm);
 end rename_high_value;
 
+/******************************************************************************************************************************************************************/
+
+--
+-- Translate words between different languages
+--
+function f_translate (p_word in varchar2, p_lang_from in varchar2 default 'nl', p_lang_to in varchar2 default 'en', p_initcap in integer default 1) return varchar2
+is
+l_return gmn_translations.translation%type;
+begin
+  select translation into l_return from gmn_translations
+  where lang_from = p_lang_from and lang_to = p_lang_to and lower (p_word) = lower(word);
+  if p_initcap = 1
+  then return initcap (l_return);
+  else return l_return;
+  end if;
+
+exception when no_data_found or dup_val_on_index
+then
+  if p_initcap = 1
+  then return initcap (p_word);
+  else return p_word;
+  end if;
+when others
+then
+  util.show_error ('Error in function f_translate for word: ' || p_word || ' translation from ' || p_lang_from || ' to ' || p_lang_to, sqlerrm);
+  return null;
+end f_translate;
+
+
 end garmin_pkg;
 /
 
@@ -1805,6 +1836,21 @@ hydration_sweatlossinml, hydration_valueinml, maxheartrate, minavgheartrate
 , restingheartratetimestamp, totaldistancemeters, totalkilocalories, totalsteps, userintensityminutesgoal
 from v_gmn_json_hydration
 where uuid not in (select uuid from gmn_hydration);
+
+---------------------------------
+
+create or replace view v_gmn_session_weather
+as
+select si.person_id, si.fit_id, si.sport_profile_name, si.start_time, wh.image, wh.temperature,
+wh.windms, wh.winddirection, si.avg_heart_rate, si.max_heart_rate,
+round (3.6 * si.enhanced_avg_speed, 2) avg_speed, round (3.6 * si.enhanced_max_speed, 2) max_speed
+from gmn_session_info si , gmn_weather_expectation_per_hour wh
+where (fit_id, hour) in (
+select si2.fit_id, max (wh2.hour) hour
+from gmn_session_info si2, gmn_weather_expectation_per_hour wh2
+where trunc(si2.start_time, 'HH') between wh2.hour and wh2.hour + 2/24 
+group by si2.fit_id);
+
 
 
 
